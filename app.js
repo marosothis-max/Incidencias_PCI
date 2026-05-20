@@ -265,6 +265,13 @@ function renderNotifBadge() {
   } else {
     badge.classList.add('hidden');
   }
+  // Actualizar pill de la pestaña
+  const total = myNotifications().length;
+  const unread = myNotifications().filter(n => !n.read).length;
+  const adminPill    = $('#adminNotifCount');
+  const providerPill = $('#providerNotifCount');
+  if (adminPill)    adminPill.textContent    = unread > 0 ? String(unread) : String(total);
+  if (providerPill) providerPill.textContent = unread > 0 ? String(unread) : String(total);
 }
 
 function renderNotifPanel() {
@@ -339,6 +346,117 @@ function renderNotifPanel() {
     item.append(dot, text);
     panel.appendChild(item);
   });
+}
+
+/* ========================================================================
+ * PÁGINA COMPLETA DE NOTIFICACIONES
+ * ====================================================================== */
+function renderNotificationsTab(containerId) {
+  const container = $('#' + containerId);
+  container.innerHTML = '';
+
+  const notifs = myNotifications();
+  const unread = notifs.filter(n => !n.read).length;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'notif-page';
+
+  // Cabecera
+  const header = document.createElement('div');
+  header.className = 'notif-page-header';
+  const title = document.createElement('h3');
+  title.textContent = `Notificaciones${unread > 0 ? ` (${unread} sin leer)` : ''}`;
+  header.appendChild(title);
+
+  if (unread > 0) {
+    const readAllBtn = document.createElement('button');
+    readAllBtn.className = 'btn btn-outline btn-sm';
+    readAllBtn.textContent = 'Marcar todo como leído';
+    readAllBtn.onclick = () => {
+      notifs.forEach(n => { n.read = true; });
+      saveState();
+      renderNotifBadge();
+      renderNotificationsTab(containerId);
+    };
+    header.appendChild(readAllBtn);
+  }
+  wrap.appendChild(header);
+
+  if (!notifs.length) {
+    wrap.appendChild(emptyState('No tienes notificaciones todavía.'));
+    container.appendChild(wrap);
+    return;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'notif-list';
+
+  notifs.forEach(n => {
+    const card = document.createElement('div');
+    card.className = `notif-card ${n.read ? '' : 'unread-card'}`;
+
+    card.onclick = () => {
+      n.read = true;
+      saveState();
+      renderNotifBadge();
+      // Navegar a la incidencia
+      if (n.incidentId) {
+        if (isAdmin()) {
+          state.filters.admin.q = n.incidentId;
+          switchAdminTab('incidents');
+          if ($('#adminFilterQ')) $('#adminFilterQ').value = n.incidentId;
+          renderAdminIncidents();
+        } else {
+          state.filters.provider.q = n.incidentId;
+          if ($('#providerFilterQ')) $('#providerFilterQ').value = n.incidentId;
+          switchProviderTab('mine');
+          renderProviderLists();
+        }
+      } else {
+        renderNotificationsTab(containerId);
+      }
+    };
+
+    const dot = document.createElement('div');
+    dot.className = `notif-card-dot ${n.read ? 'read' : ''}`;
+
+    const body = document.createElement('div');
+    body.className = 'notif-card-body';
+
+    const msg = document.createElement('div');
+    msg.className = 'notif-card-msg';
+    msg.textContent = n.message;
+
+    const meta = document.createElement('div');
+    meta.className = 'notif-card-meta';
+
+    const time = document.createElement('span');
+    time.className = 'notif-card-time';
+    time.textContent = relativeTime(n.at);
+    time.title = formatDate(n.at);
+    meta.appendChild(time);
+
+    if (n.incidentId) {
+      const inc = document.createElement('span');
+      inc.className = 'notif-card-inc';
+      inc.textContent = n.incidentId;
+      meta.appendChild(inc);
+    }
+
+    body.append(msg, meta);
+    card.append(dot, body);
+    list.appendChild(card);
+  });
+
+  wrap.appendChild(list);
+  container.appendChild(wrap);
+
+  // Marcar todas como leídas tras 2s de visualización
+  setTimeout(() => {
+    let changed = false;
+    notifs.forEach(n => { if (!n.read) { n.read = true; changed = true; } });
+    if (changed) { saveState(); renderNotifBadge(); }
+  }, 2000);
 }
 
 /* ---------- Vistas ---------- */
@@ -524,13 +642,14 @@ function switchAdminTab(tab) {
     b.classList.toggle('active', active);
     b.setAttribute('aria-selected', String(active));
   });
-  ['dashboard', 'incidents', 'create', 'users'].forEach(t => {
+  ['dashboard', 'incidents', 'create', 'users', 'notif'].forEach(t => {
     $(`#admin${t[0].toUpperCase()}${t.slice(1)}Tab`)?.classList.toggle('hidden', t !== tab);
   });
 
   if (tab === 'dashboard') renderAdminDashboard();
   if (tab === 'incidents') { renderAdminFilters(); renderAdminIncidents(); }
   if (tab === 'users')     renderUsers();
+  if (tab === 'notif')     renderNotificationsTab('adminNotifTab');
 }
 
 function switchProviderTab(tab) {
@@ -540,12 +659,13 @@ function switchProviderTab(tab) {
     b.classList.toggle('active', active);
     b.setAttribute('aria-selected', String(active));
   });
-  ['dashboard', 'available', 'mine'].forEach(t => {
+  ['dashboard', 'available', 'mine', 'notif'].forEach(t => {
     $(`#provider${t[0].toUpperCase()}${t.slice(1)}Tab`)?.classList.toggle('hidden', t !== tab);
   });
 
   if (tab === 'dashboard')              renderProviderDashboard();
   if (tab === 'available' || tab === 'mine') { renderProviderFilters(); renderProviderLists(); }
+  if (tab === 'notif')                  renderNotificationsTab('providerNotifTab');
 }
 
 /* ---------- Crear incidencia ---------- */

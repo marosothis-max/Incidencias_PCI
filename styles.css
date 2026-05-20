@@ -89,11 +89,13 @@ html, body {
   gap: 10px;
 }
 .brand-logo {
-  height: 38px;
+  /* PNG horizontal: alto fijo, ancho proporcional, nunca más de 160px */
+  max-width: 160px;
+  max-height: 36px;
   width: auto;
+  height: auto;
   display: block;
-  image-rendering: -webkit-optimize-contrast;
-  image-rendering: crisp-edges;
+  object-fit: contain;
 }
 .brand-sub {
   font-size: 11px;
@@ -353,10 +355,14 @@ textarea { resize: vertical; }
   text-align: center;
 }
 .login-logo {
-  height: 50px;
-  width: auto;
-  margin: 0 auto 20px;
+  /* Contenida en el card (max 240px de ancho) */
+  max-width: 240px;
+  max-height: 56px;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
   display: block;
+  margin: 0 auto 24px;
 }
 .login-card h2 {
   margin: 0 0 20px;
@@ -938,6 +944,88 @@ textarea { resize: vertical; }
 .hidden-when-dashboard { display: none; }
 #providerView[data-tab="available"] .hidden-when-dashboard,
 #providerView[data-tab="mine"] .hidden-when-dashboard { display: flex; }
+
+/* ========================================================================
+ * PÁGINA DE NOTIFICACIONES (tab)
+ * ====================================================================== */
+.notif-page {
+  max-width: 720px;
+}
+.notif-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.notif-page-header h3 {
+  margin: 0;
+  color: var(--primary);
+  font-size: 18px;
+  font-weight: 800;
+}
+.notif-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.notif-card {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
+  border-left: 3px solid var(--border);
+}
+.notif-card:hover { border-color: var(--brand-navy); box-shadow: var(--shadow); }
+.notif-card.unread-card {
+  border-left-color: var(--info);
+  background: #f0f7ff;
+}
+@media (prefers-color-scheme: dark) {
+  .notif-card.unread-card { background: rgba(37,99,235,.08); }
+}
+.notif-card-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--info);
+  flex-shrink: 0;
+  margin-top: 5px;
+}
+.notif-card-dot.read { background: var(--border); }
+.notif-card-body { flex: 1; min-width: 0; }
+.notif-card-msg {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.45;
+  word-break: break-word;
+}
+.notif-card-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 5px;
+}
+.notif-card-time {
+  font-size: 12px;
+  color: var(--muted);
+}
+.notif-card-inc {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: ui-monospace, monospace;
+}
 
 /* ========================================================================
  * TOAST

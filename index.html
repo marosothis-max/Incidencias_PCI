@@ -60,6 +60,9 @@
           <button class="tab"        data-admin-tab="incidents" role="tab" aria-selected="false" type="button">Incidencias</button>
           <button class="tab"        data-admin-tab="create"    role="tab" aria-selected="false" type="button">+ Crear</button>
           <button class="tab"        data-admin-tab="users"     role="tab" aria-selected="false" type="button">Proveedores</button>
+          <button class="tab"        data-admin-tab="notif"     role="tab" aria-selected="false" type="button">
+            Notificaciones <span class="pill" id="adminNotifCount">0</span>
+          </button>
         </nav>
 
         <!-- Tab: Dashboard -->
@@ -155,6 +158,9 @@
             </div>
           </div>
         </div>
+
+        <!-- Tab: Notificaciones -->
+        <div id="adminNotifTab" class="tab-panel hidden" role="tabpanel" aria-live="polite"></div>
       </section>
 
       <!-- ========== PROVEEDOR ========== -->
@@ -168,6 +174,9 @@
           </button>
           <button class="tab"        data-provider-tab="mine"      role="tab" aria-selected="false" type="button">
             Mis incidencias <span class="pill" id="providerMineCount">0</span>
+          </button>
+          <button class="tab"        data-provider-tab="notif"     role="tab" aria-selected="false" type="button">
+            Notificaciones <span class="pill" id="providerNotifCount">0</span>
           </button>
         </nav>
 
@@ -187,6 +196,9 @@
         <div id="providerMineTab" class="tab-panel hidden" role="tabpanel">
           <div id="providerMineList" class="incidents-list" aria-live="polite"></div>
         </div>
+
+        <!-- Tab: Notificaciones -->
+        <div id="providerNotifTab" class="tab-panel hidden" role="tabpanel" aria-live="polite"></div>
       </section>
 
     </section>
