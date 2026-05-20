@@ -519,32 +519,6 @@ textarea { resize: vertical; }
 }
 .login-card label { text-align: left; }
 
-/* Firma de autor en el login */
-.login-made-in {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 22px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
-  font-size: 11px;
-  color: var(--muted);
-  letter-spacing: .01em;
-  line-height: 1.4;
-}
-.login-flag {
-  width: 22px;
-  height: 15px;
-  border-radius: 2px;
-  box-shadow: 0 0 0 1px rgba(0,0,0,.12);
-  flex-shrink: 0;
-  display: inline-block;
-  vertical-align: middle;
-}
-.login-made-sep { color: var(--border); }
-
 /* ---------- Tabs ---------- */
 .tabs {
   display: flex; gap: 2px;
