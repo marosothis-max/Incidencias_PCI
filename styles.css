@@ -148,6 +148,7 @@
   --radius:    12px;
   --radius-sm: 8px;
   --radius-xs: 5px;
+  --banner-h:  33px; /* altura del demo-banner en desktop */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -196,7 +197,7 @@ html, body {
   flex-wrap: wrap;
   gap: 12px;
   position: sticky;
-  top: 33px; /* deja espacio al demo-banner sticky */
+  top: var(--banner-h); /* deja espacio al demo-banner sticky */
   z-index: 100;
   box-shadow: var(--shadow);
 }
@@ -1346,14 +1347,203 @@ textarea { resize: vertical; }
 #toast.toast-error   { background: var(--danger);  color: #fff; }
 #toast.toast-info    { background: var(--brand-navy); color: #fff; }
 
-/* ---------- Responsive ---------- */
-@media (max-width: 640px) {
-  .container { padding: 12px; }
+/* ========================================================================
+ * RESPONSIVE — 4 breakpoints
+ * Desktop ≥1024 · Tablet 768-1023 · Mobile 480-767 · XS ≤479
+ * ====================================================================== */
+
+/* Mejoras globales para touch */
+* { -webkit-tap-highlight-color: transparent; }
+button, a, [role="button"] { touch-action: manipulation; }
+/* Evita zoom automático en iOS al hacer focus en inputs */
+@media (max-width: 767px) {
+  input, select, textarea { font-size: max(16px, 1em); }
+}
+
+/* ── Tablet (≤ 1023px) ─────────────────────────────────────── */
+@media (max-width: 1023px) {
+  .container { padding: 20px 16px 64px; }
+
+  .kpi-grid { grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 10px; }
+
+  .users-layout { grid-template-columns: 1fr; }
+
+  .watch-row { grid-template-columns: 72px 1fr auto auto auto; }
+}
+
+/* ── Mobile (≤ 767px) ──────────────────────────────────────── */
+@media (max-width: 767px) {
+  :root { --banner-h: 46px; } /* banner puede hacer 2 líneas */
+
+  .container { padding: 14px 12px 80px; }
+
+  /* Banner */
+  .demo-banner {
+    font-size: 11px;
+    padding: 6px 14px;
+    line-height: 1.5;
+    text-align: left;
+    align-items: flex-start;
+  }
+
+  /* Header */
   .app-header { padding: 0 14px; height: auto; min-height: 56px; }
+  .brand-icon { width: 30px; height: 30px; }
+  .brand-name { font-size: 15px; }
+  .brand-sub  { font-size: 10px; }
+  .session { gap: 6px; }
+  .session-text {
+    font-size: 12px;
+    padding: 4px 10px;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Ocultar "Restablecer demo" en móvil para no saturar el header */
+  #resetBtn { display: none; }
+
+  /* Tabs */
+  .tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    gap: 0;
+    padding-bottom: 0;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { padding: 10px 13px; font-size: 13px; white-space: nowrap; }
+
+  /* Dashboard KPI */
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .kpi { padding: 14px 12px 12px; }
+  .kpi-value { font-size: 26px; }
+  .kpi-label { font-size: 10.5px; }
+  .kpi-icon  { width: 26px; height: 26px; margin-bottom: 8px; }
+
+  /* Gráficas */
+  .dash-charts { grid-template-columns: 1fr; gap: 10px; }
+  .dash-section { padding: 14px 12px; }
+  .chart-wrap canvas { max-height: 220px !important; }
+
+  /* Barras */
+  .bar-row { grid-template-columns: 80px 1fr 50px; gap: 6px; }
+  .bar-label { font-size: 12px; }
+  .bar-val   { font-size: 11px; }
+
+  /* Watch list */
+  .watch-row {
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto auto;
+    gap: 4px 8px;
+    padding: 10px 12px;
+  }
+  .watch-id     { grid-column: 1; grid-row: 1; }
+  .watch-age    { grid-column: 2; grid-row: 1; text-align: right; }
+  .watch-title  { grid-column: 1 / -1; grid-row: 2; white-space: normal; }
+  .priority-badge, .status-badge { grid-row: 3; }
+  .inline-progress { grid-column: 1; grid-row: 3; min-width: 0; }
+  .inline-progress .bar-track { width: 80px; }
+
+  /* Incidencias */
+  .incidents-list { grid-template-columns: 1fr; gap: 10px; }
+  .incident-card  { padding: 14px 12px; }
+  .incident-header { flex-direction: column; align-items: stretch; gap: 6px; }
+  .incident-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .incident-actions select { width: 100%; }
+  .incident-actions .btn   { width: 100%; justify-content: center; }
+  .progress-control { flex-wrap: wrap; }
+
+  /* Filtros */
+  .filters { padding: 10px; gap: 8px; }
+  .filters input[type="search"] { flex: 1 1 100%; }
+  .filters select { flex: 1 1 calc(50% - 4px); }
+  .filters .count { flex: 1 1 100%; text-align: center; }
+
+  /* Formularios */
+  .form-card { padding: 16px 14px; }
+  .form-row { grid-template-columns: 1fr; gap: 0; }
+  .form-actions { flex-direction: column; gap: 8px; }
+  .form-actions .btn { width: 100%; justify-content: center; }
+
+  /* Docs */
+  .doc-row { grid-template-columns: 1fr; }
+  .doc-upload { flex-direction: column; align-items: stretch; }
+  .doc-upload .doc-amount { width: 100%; max-width: none; }
+  .doc-actions { flex-direction: column; }
+  .doc-actions .btn { width: 100%; justify-content: center; }
+
+  /* Mensajes */
+  .message-composer { flex-direction: column; gap: 6px; }
+  .message-composer .btn { width: 100%; justify-content: center; }
+
+  /* Usuarios */
+  .user-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .user-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .user-actions .btn { width: 100%; justify-content: center; }
+  .user-credentials { flex-wrap: wrap; }
+
+  /* Login */
+  .login-card { padding: 28px 18px 22px; margin: 0 2px; }
+  .login-logo-wrap { gap: 10px; }
+  .login-brand-text { font-size: 18px; }
+  .login-view { padding: 16px; min-height: calc(100svh - var(--banner-h) - 56px); }
+
+  /* Seguridad login */
+  .login-security { font-size: 12px; }
+  .attempt-dot { width: 9px; height: 9px; }
+
+  /* Notif panel */
+  .notif-panel {
+    width: calc(100vw - 24px);
+    right: -10px;
+    max-height: 70vh;
+  }
+
+  /* RGPD */
+  .rgpd-wrap { padding: 12px; }
+  .rgpd-label { font-size: 12px; }
+
+  /* Modal simulación */
+  .sim-modal-box { padding: 32px 20px 24px; }
+
+  /* Toast */
+  #toast {
+    max-width: calc(100vw - 32px);
+    font-size: 13px;
+    padding: 10px 16px;
+    bottom: 20px;
+  }
+}
+
+/* ── XS — Teléfonos muy pequeños (≤ 399px) ─────────────────── */
+@media (max-width: 399px) {
+  :root { --banner-h: 56px; }
+
+  .container { padding: 10px 10px 80px; }
+
+  .kpi-grid  { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .kpi-value { font-size: 22px; }
+  .kpi       { padding: 12px 10px 10px; }
+
+  .tab { padding: 9px 10px; font-size: 12px; }
+
+  .session-text { max-width: 90px; font-size: 11px; }
+
+  .brand-name { font-size: 14px; }
+  .brand-sub  { display: none; }
+
+  .watch-row { padding: 8px 10px; }
+
+  .bar-row { grid-template-columns: 70px 1fr 44px; }
+
+  .btn { padding: 8px 12px; font-size: 13px; }
+  .btn-sm { padding: 5px 8px; font-size: 11.5px; }
+
   .filters select { flex: 1 1 100%; }
-  .incidents-list { grid-template-columns: 1fr; }
-  .incident-header { flex-direction: column; align-items: stretch; }
-  .user-row { flex-direction: column; align-items: stretch; }
-  .user-actions { justify-content: flex-end; }
-  .notif-panel { width: 300px; right: -80px; }
 }
