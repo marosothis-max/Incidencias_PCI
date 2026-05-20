@@ -6,8 +6,8 @@
 'use strict';
 
 /* ---------- Constantes ---------- */
-const STORAGE_KEY = 'urban_psi_state_v3';
-const SESSION_KEY = 'urban_psi_session_v3';
+const STORAGE_KEY = 'urban_psi_state_v4';
+const SESSION_KEY = 'urban_psi_session_v4';
 
 const CRITICALITIES  = ['Baja', 'Normal', 'Alta', 'Urgente'];
 const STATUSES       = ['Pendiente', 'En Proceso', 'Finalizada', 'Requiere Revisión'];
