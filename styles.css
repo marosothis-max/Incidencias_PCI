@@ -590,6 +590,102 @@ textarea { resize: vertical; }
   font-weight: 800;
 }
 
+/* ============================================================
+ * PROTECCIÓN ANTI-FUERZA BRUTA
+ * ========================================================== */
+
+/* Shake en credenciales incorrectas */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  15%       { transform: translateX(-8px); }
+  30%       { transform: translateX(7px); }
+  45%       { transform: translateX(-6px); }
+  60%       { transform: translateX(5px); }
+  75%       { transform: translateX(-3px); }
+  90%       { transform: translateX(2px); }
+}
+.shake { animation: shake .55s cubic-bezier(.36,.07,.19,.97) both; }
+
+/* Contenedor general del bloque de seguridad */
+.login-security {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: #fff8f0;
+  border: 1.5px solid #f0cfa0;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: background .3s, border-color .3s;
+}
+.login-security.locked {
+  background: #fff1f2;
+  border-color: #fecaca;
+}
+
+/* Texto de intentos fallidos */
+.attempt-info {
+  color: #92400e;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.attempt-warn { color: #d97706; }
+
+/* Puntos indicadores (●●●○○) */
+.attempt-bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.attempt-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  border: 1.5px solid #cbd5e1;
+  transition: background .25s, border-color .25s;
+}
+.attempt-dot.used {
+  background: #f87171;
+  border-color: #ef4444;
+}
+
+/* Info de bloqueo activo */
+.lockout-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #b91c1c;
+  font-weight: 600;
+  font-size: 13px;
+}
+.lockout-info svg { flex-shrink: 0; color: #dc2626; }
+.lockout-info strong {
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  color: #dc2626;
+  min-width: 36px;
+  display: inline-block;
+}
+
+/* Input deshabilitado durante lockout */
+#usernameInput:disabled,
+#passwordInput:disabled {
+  background: #f1f5f9;
+  color: #94a3b8;
+  cursor: not-allowed;
+  border-color: #e2e8f0;
+}
+
+/* Botón bloqueado */
+#loginBtn:disabled {
+  background: #94a3b8;
+  border-color: #94a3b8;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
 .credentials-hint {
   display: flex;
   flex-direction: column;

@@ -24,6 +24,11 @@ const DOC_STATUSES = {
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 
+/* ---------- Protección fuerza bruta ---------- */
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_BASE_MS    = 2 * 60 * 1000; // 2 min base; se duplica en cada bloqueo
+const LOCKOUT_KEY        = 'urban_psi_lockout';
+
 /* ---------- Datos por defecto (semilla) ---------- */
 const NOW = Date.now();
 
@@ -234,6 +239,117 @@ function readFileAsDataURL(file) {
     r.onerror = rej;
     r.readAsDataURL(file);
   });
+}
+
+/* ========================================================================
+ * PROTECCIÓN ANTI-FUERZA BRUTA
+ * ====================================================================== */
+let lockoutTimer = null;
+
+function getLockout() {
+  try {
+    const raw = localStorage.getItem(LOCKOUT_KEY);
+    return raw ? JSON.parse(raw) : { attempts: 0, lockedUntil: 0, lockCount: 0 };
+  } catch { return { attempts: 0, lockedUntil: 0, lockCount: 0 }; }
+}
+
+function saveLockout(data) {
+  try { localStorage.setItem(LOCKOUT_KEY, JSON.stringify(data)); } catch (_) {}
+}
+
+function clearLockout() {
+  try { localStorage.removeItem(LOCKOUT_KEY); } catch (_) {}
+  clearInterval(lockoutTimer);
+  lockoutTimer = null;
+}
+
+function shakeLoginCard() {
+  const card = $('.login-card');
+  if (!card) return;
+  card.classList.remove('shake');
+  void card.offsetWidth; // fuerza reflow para reiniciar animación
+  card.classList.add('shake');
+  setTimeout(() => card.classList.remove('shake'), 600);
+}
+
+function updateLoginSecurityUI() {
+  const secDiv  = $('#loginSecurity');
+  const infoEl  = $('#loginAttemptInfo');
+  const barEl   = $('#loginAttemptBar');
+  const lockEl  = $('#loginLockout');
+  const timerEl = $('#lockoutTimer');
+  const btn     = $('#loginBtn');
+  const userIn  = $('#usernameInput');
+  const passIn  = $('#passwordInput');
+  if (!secDiv) return;
+
+  const lk  = getLockout();
+  const now = Date.now();
+
+  if (lk.lockedUntil > now) {
+    /* ---- ESTADO BLOQUEADO ---- */
+    secDiv.classList.remove('hidden');
+    secDiv.classList.add('locked');
+    if (infoEl) infoEl.classList.add('hidden');
+    if (barEl)  barEl.classList.add('hidden');
+    if (lockEl) lockEl.classList.remove('hidden');
+    if (btn)    { btn.disabled = true; btn.textContent = 'Acceso bloqueado'; }
+    if (userIn) userIn.disabled = true;
+    if (passIn) passIn.disabled = true;
+
+    const tick = () => {
+      const rem = Math.max(0, lk.lockedUntil - Date.now());
+      if (timerEl) {
+        const m = Math.floor(rem / 60000);
+        const s = Math.floor((rem % 60000) / 1000);
+        timerEl.textContent = `${m}:${String(s).padStart(2, '0')}`;
+      }
+      if (rem <= 0) {
+        clearInterval(lockoutTimer);
+        lockoutTimer = null;
+        lk.attempts = 0; lk.lockedUntil = 0;
+        saveLockout(lk);
+        updateLoginSecurityUI();
+      }
+    };
+    tick();
+    clearInterval(lockoutTimer);
+    lockoutTimer = setInterval(tick, 1000);
+
+  } else if (lk.attempts > 0) {
+    /* ---- ESTADO CON INTENTOS FALLIDOS ---- */
+    secDiv.classList.remove('hidden', 'locked');
+    if (lockEl) lockEl.classList.add('hidden');
+    if (infoEl) {
+      infoEl.classList.remove('hidden');
+      const rem = MAX_LOGIN_ATTEMPTS - lk.attempts;
+      infoEl.innerHTML =
+        `<span class="attempt-warn">&#9888;</span> ${lk.attempts} intento${lk.attempts > 1 ? 's' : ''} fallido${lk.attempts > 1 ? 's' : ''} &mdash; ` +
+        `<strong>${rem}</strong> restante${rem !== 1 ? 's' : ''} antes del bloqueo`;
+    }
+    if (barEl) {
+      barEl.classList.remove('hidden');
+      barEl.innerHTML = '';
+      for (let i = 0; i < MAX_LOGIN_ATTEMPTS; i++) {
+        const dot = document.createElement('span');
+        dot.className = `attempt-dot${i < lk.attempts ? ' used' : ''}`;
+        barEl.appendChild(dot);
+      }
+    }
+    if (btn)    { btn.disabled = false; btn.textContent = 'Entrar'; }
+    if (userIn) userIn.disabled = false;
+    if (passIn) passIn.disabled = false;
+
+  } else {
+    /* ---- ESTADO LIMPIO ---- */
+    secDiv.classList.add('hidden');
+    secDiv.classList.remove('locked');
+    if (btn)    { btn.disabled = false; btn.textContent = 'Entrar'; }
+    if (userIn) userIn.disabled = false;
+    if (passIn) passIn.disabled = false;
+    clearInterval(lockoutTimer);
+    lockoutTimer = null;
+  }
 }
 
 /* ---------- Masking de datos sensibles (FASE 1) ---------- */
@@ -473,11 +589,50 @@ const views = {
 
 /* ---------- Auth ---------- */
 function login() {
+  const lk = getLockout();
+
+  /* Bloqueo activo → rechazar sin revelar info */
+  if (lk.lockedUntil > Date.now()) {
+    shakeLoginCard();
+    const rem = Math.ceil((lk.lockedUntil - Date.now()) / 1000);
+    const m = Math.floor(rem / 60), s = rem % 60;
+    return toast(`Acceso bloqueado. Reintenta en ${m}:${String(s).padStart(2,'0')}.`, 'error');
+  }
+
   const username = $('#usernameInput').value.trim();
   const password = $('#passwordInput').value;
   if (!username || !password) return toast('Introduce usuario y contraseña', 'error');
+
   const user = state.users.find(u => u.username === username && u.password === password);
-  if (!user) return toast('Credenciales inválidas', 'error');
+
+  if (!user) {
+    /* Credenciales incorrectas → incrementar contador */
+    lk.attempts = (lk.attempts || 0) + 1;
+
+    if (lk.attempts >= MAX_LOGIN_ATTEMPTS) {
+      /* Bloquear con duración progresiva (×2 cada bloqueo) */
+      lk.lockCount  = (lk.lockCount || 0) + 1;
+      const duration = LOCKOUT_BASE_MS * Math.pow(2, lk.lockCount - 1);
+      lk.lockedUntil = Date.now() + duration;
+      saveLockout(lk);
+      updateLoginSecurityUI();
+      shakeLoginCard();
+      $('#passwordInput').value = '';
+      const mins = Math.ceil(duration / 60000);
+      return toast(`Demasiados intentos fallidos. Bloqueado ${mins} min.`, 'error');
+    }
+
+    saveLockout(lk);
+    updateLoginSecurityUI();
+    shakeLoginCard();
+    $('#passwordInput').value = '';
+    const rem = MAX_LOGIN_ATTEMPTS - lk.attempts;
+    return toast(`Credenciales incorrectas. ${rem} intento${rem !== 1 ? 's' : ''} restante${rem !== 1 ? 's' : ''}.`, 'error');
+  }
+
+  /* Éxito → limpiar lockout y entrar */
+  clearLockout();
+  updateLoginSecurityUI();
   state.currentUser = user;
   saveSession();
   $('#passwordInput').value = '';
@@ -1568,6 +1723,7 @@ function bindEvents() {
       if (!confirm('¿Restablecer todos los datos a la demo?')) return;
       localStorage.removeItem(STORAGE_KEY);
       sessionStorage.removeItem(SESSION_KEY);
+      clearLockout();
       state.currentUser   = null;
       state.users         = structuredClone(DEFAULT_USERS);
       state.incidents     = structuredClone(DEFAULT_INCIDENTS);
@@ -1577,6 +1733,6 @@ function bindEvents() {
   }
 }
 
-function init() { loadState(); bindEvents(); render(); }
+function init() { loadState(); bindEvents(); render(); updateLoginSecurityUI(); }
 
 document.addEventListener('DOMContentLoaded', init);
