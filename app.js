@@ -1,0 +1,1295 @@
+/* =========================================================================
+ * Urban PSI — Gestión de Incidencias
+ * v2: usuarios CRUD, dashboard, criticidad, % avance, presupuestos/facturas
+ * ========================================================================= */
+
+'use strict';
+
+/* ---------- Constantes ---------- */
+const STORAGE_KEY = 'urban_psi_state_v2';
+const SESSION_KEY = 'urban_psi_session_v2';
+
+const CRITICALITIES = ['Baja', 'Normal', 'Alta', 'Urgente'];
+const STATUSES      = ['Pendiente', 'En Proceso', 'Finalizada', 'Requiere Revisión'];
+const PROVIDER_TYPES = ['autonomo', 'empresa'];
+
+const ROLE_LABELS = { admin: 'Administrador', provider: 'Proveedor' };
+const TYPE_LABELS = { autonomo: 'Autónomo', empresa: 'Empresa' };
+
+const DOC_STATUSES = {
+  en_revision: 'En revisión',
+  aprobado:    'Aprobado',
+  rechazado:   'Rechazado'
+};
+
+const MAX_FILE_BYTES = 2 * 1024 * 1024; // 2 MB por archivo
+
+/* ---------- Datos por defecto (semilla) ---------- */
+const NOW = Date.now();
+
+const DEFAULT_USERS = [
+  { id: 'u-admin', username: 'admin', password: '1234', role: 'admin',
+    name: 'Gestor Urban PSI', type: null, email: 'admin@urbanpsi.local',
+    phone: '', taxId: '', createdAt: NOW },
+  { id: 'u-p1', username: 'fontaneria_lopez', password: '1234', role: 'provider',
+    name: 'Fontanería López', type: 'empresa', email: 'contacto@fontanerialopez.es',
+    phone: '600 111 222', taxId: 'B12345678', createdAt: NOW },
+  { id: 'u-p2', username: 'electricidad_norte', password: '1234', role: 'provider',
+    name: 'Electricidad Norte', type: 'autonomo', email: 'juan@electricidadnorte.es',
+    phone: '600 333 444', taxId: '12345678Z', createdAt: NOW }
+];
+
+const DEFAULT_INCIDENTS = [
+  {
+    id: 'INC-001',
+    title: 'Fuga en baño habitación 2',
+    address: 'C/ Mayor 14, Piso 2A',
+    description: 'Revisar fuga en tubería de lavabo. Posible cambio de latiguillo.',
+    criticality: 'Urgente',
+    status: 'Pendiente',
+    assignedProviderId: null,
+    createdBy: 'u-admin',
+    createdAt: NOW - 86_400_000 * 2,
+    updatedAt: NOW - 86_400_000 * 2,
+    progress: 0,
+    applicants: [],
+    messages: [],
+    budgets: [],
+    invoices: []
+  },
+  {
+    id: 'INC-002',
+    title: 'Fallo de iluminación pasillo',
+    address: 'Av. Central 8, Piso 1B',
+    description: 'No encienden 2 focos del pasillo, revisar instalación.',
+    criticality: 'Normal',
+    status: 'En Proceso',
+    assignedProviderId: 'u-p2',
+    createdBy: 'u-admin',
+    createdAt: NOW - 86_400_000 * 5,
+    updatedAt: NOW - 3_600_000,
+    progress: 40,
+    applicants: ['u-p2'],
+    messages: [
+      { from: 'u-admin', text: 'Revisar cuadro eléctrico antes de cambiar focos.', at: NOW - 3_600_000 }
+    ],
+    budgets: [],
+    invoices: []
+  }
+];
+
+/* ---------- Estado ---------- */
+const state = {
+  users: [],
+  incidents: [],
+  currentUser: null,
+  filters: {
+    admin:    { q: '', status: '', criticality: '', assigned: '' },
+    provider: { q: '', criticality: '' }
+  },
+  ui: { adminTab: 'dashboard', providerTab: 'dashboard', editingUserId: null }
+};
+
+/* ---------- Persistencia ---------- */
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const d = JSON.parse(raw);
+      state.users     = Array.isArray(d.users)     ? d.users     : structuredClone(DEFAULT_USERS);
+      state.incidents = Array.isArray(d.incidents) ? d.incidents : structuredClone(DEFAULT_INCIDENTS);
+      // Migración suave por si faltan campos
+      state.incidents.forEach(i => {
+        if (!Array.isArray(i.applicants)) i.applicants = [];
+        if (!Array.isArray(i.budgets))    i.budgets = [];
+        if (!Array.isArray(i.invoices))   i.invoices = [];
+        if (typeof i.progress !== 'number') i.progress = 0;
+        if (!i.criticality && i.priority) i.criticality = i.priority;
+      });
+    } else {
+      state.users     = structuredClone(DEFAULT_USERS);
+      state.incidents = structuredClone(DEFAULT_INCIDENTS);
+      saveState();
+    }
+  } catch (err) {
+    console.warn('Estado corrupto, usando semilla.', err);
+    state.users     = structuredClone(DEFAULT_USERS);
+    state.incidents = structuredClone(DEFAULT_INCIDENTS);
+  }
+
+  try {
+    const sid = sessionStorage.getItem(SESSION_KEY);
+    if (sid) state.currentUser = state.users.find(u => u.id === sid) || null;
+  } catch (_) {}
+}
+
+function saveState() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      users: state.users, incidents: state.incidents
+    }));
+  } catch (err) {
+    console.error('Error guardando:', err);
+    toast('No se pudo guardar (cuota llena). Reduce archivos adjuntos.', 'error');
+  }
+}
+
+function saveSession() {
+  try {
+    if (state.currentUser) sessionStorage.setItem(SESSION_KEY, state.currentUser.id);
+    else                   sessionStorage.removeItem(SESSION_KEY);
+  } catch (_) {}
+}
+
+/* ---------- Utilidades ---------- */
+const $  = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+const uid = (prefix = 'id') => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+
+function findUser(id)   { return state.users.find(u => u.id === id) || null; }
+function findIncident(id){ return state.incidents.find(i => i.id === id) || null; }
+function userName(id)   { return findUser(id)?.name || 'Usuario'; }
+function providers()    { return state.users.filter(u => u.role === 'provider'); }
+function isAdmin()      { return state.currentUser?.role === 'admin'; }
+function myId()         { return state.currentUser?.id; }
+
+function nextIncidentId() {
+  const max = state.incidents
+    .map(i => parseInt(String(i.id).replace('INC-', ''), 10))
+    .filter(Number.isFinite)
+    .reduce((a, b) => Math.max(a, b), 0);
+  return `INC-${String(max + 1).padStart(3, '0')}`;
+}
+
+function formatDate(ts) {
+  if (!ts) return '';
+  return new Date(ts).toLocaleString('es-ES', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+}
+
+function relativeTime(ts) {
+  if (!ts) return '';
+  const diff = Date.now() - ts;
+  const mins  = Math.floor(diff / 60_000);
+  const hours = Math.floor(diff / 3_600_000);
+  const days  = Math.floor(diff / 86_400_000);
+  if (mins  < 1)  return 'ahora';
+  if (mins  < 60) return `hace ${mins} min`;
+  if (hours < 24) return `hace ${hours} h`;
+  if (days  < 30) return `hace ${days} d`;
+  return formatDate(ts);
+}
+
+function ageDays(ts) {
+  if (!ts) return 0;
+  return Math.floor((Date.now() - ts) / 86_400_000);
+}
+
+function slug(s) {
+  return String(s).toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '-');
+}
+
+function fmtBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function readFileAsDataURL(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload  = () => res(r.result);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
+/* ---------- Toast ---------- */
+let toastTimer = null;
+function toast(message, type = 'info') {
+  let el = $('#toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    document.body.appendChild(el);
+  }
+  el.textContent = message;
+  el.className = `toast toast-${type} show`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
+}
+
+/* ---------- Vistas ---------- */
+const views = {
+  login:    () => $('#loginView'),
+  app:      () => $('#appView'),
+  admin:    () => $('#adminView'),
+  provider: () => $('#providerView'),
+  session:  () => $('#sessionInfo')
+};
+
+/* ---------- Auth ---------- */
+function login() {
+  const username = $('#usernameInput').value.trim();
+  const password = $('#passwordInput').value;
+  if (!username || !password) return toast('Introduce usuario y contraseña', 'error');
+  const user = state.users.find(u => u.username === username && u.password === password);
+  if (!user) return toast('Credenciales inválidas', 'error');
+  state.currentUser = user;
+  saveSession();
+  $('#passwordInput').value = '';
+  state.ui.adminTab    = 'dashboard';
+  state.ui.providerTab = 'dashboard';
+  render();
+  toast(`Bienvenido, ${user.name}`, 'success');
+}
+
+function logout() {
+  state.currentUser = null;
+  saveSession();
+  render();
+}
+
+/* ---------- Gestión de usuarios (admin) ---------- */
+function validateUserForm(data, ignoreId = null) {
+  if (!data.name)     return 'Nombre obligatorio';
+  if (!data.username) return 'Usuario obligatorio';
+  if (!data.password) return 'Contraseña obligatoria';
+  if (!PROVIDER_TYPES.includes(data.type)) return 'Tipo inválido';
+  if (data.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) return 'Email inválido';
+  const dup = state.users.find(u => u.username === data.username && u.id !== ignoreId);
+  if (dup) return 'Ese usuario ya existe';
+  return null;
+}
+
+function submitUserForm(ev) {
+  ev?.preventDefault();
+  const id = state.ui.editingUserId;
+  const data = {
+    name:     $('#userName').value.trim(),
+    type:     $('#userType').value,
+    username: $('#userUsername').value.trim(),
+    password: $('#userPassword').value,
+    email:    $('#userEmail').value.trim(),
+    phone:    $('#userPhone').value.trim(),
+    taxId:    $('#userTaxId').value.trim()
+  };
+  const err = validateUserForm(data, id);
+  if (err) return toast(err, 'error');
+
+  if (id) {
+    const u = findUser(id);
+    if (!u) return toast('Usuario no encontrado', 'error');
+    Object.assign(u, data);
+    toast('Usuario actualizado', 'success');
+  } else {
+    state.users.push({
+      id: uid('u'),
+      role: 'provider',
+      createdAt: Date.now(),
+      ...data
+    });
+    toast('Usuario creado', 'success');
+  }
+  saveState();
+  resetUserForm();
+  renderUsers();
+}
+
+function resetUserForm() {
+  state.ui.editingUserId = null;
+  ['#userName', '#userUsername', '#userPassword', '#userEmail', '#userPhone', '#userTaxId']
+    .forEach(s => { const el = $(s); if (el) el.value = ''; });
+  if ($('#userType')) $('#userType').value = 'autonomo';
+  if ($('#userFormTitle')) $('#userFormTitle').textContent = 'Nuevo proveedor';
+  if ($('#cancelEditUserBtn')) $('#cancelEditUserBtn').classList.add('hidden');
+  if ($('#submitUserBtn')) $('#submitUserBtn').textContent = 'Crear proveedor';
+}
+
+function editUser(id) {
+  const u = findUser(id);
+  if (!u) return;
+  state.ui.editingUserId = id;
+  $('#userName').value     = u.name || '';
+  $('#userType').value     = u.type || 'autonomo';
+  $('#userUsername').value = u.username || '';
+  $('#userPassword').value = u.password || '';
+  $('#userEmail').value    = u.email || '';
+  $('#userPhone').value    = u.phone || '';
+  $('#userTaxId').value    = u.taxId || '';
+  $('#userFormTitle').textContent = `Editar: ${u.name}`;
+  $('#cancelEditUserBtn').classList.remove('hidden');
+  $('#submitUserBtn').textContent = 'Guardar cambios';
+  switchAdminTab('users');
+  $('#userName').focus();
+}
+
+function deleteUser(id) {
+  const u = findUser(id);
+  if (!u) return;
+  const assigned = state.incidents.filter(i => i.assignedProviderId === id);
+  if (assigned.length) {
+    if (!confirm(`${u.name} está asignado a ${assigned.length} incidencia(s). ¿Desasignar y eliminar?`)) return;
+    assigned.forEach(i => {
+      i.assignedProviderId = null;
+      i.status = 'Pendiente';
+      i.updatedAt = Date.now();
+    });
+  } else if (!confirm(`¿Eliminar a ${u.name}?`)) return;
+
+  state.users = state.users.filter(x => x.id !== id);
+  if (state.ui.editingUserId === id) resetUserForm();
+  saveState();
+  renderUsers();
+  toast('Usuario eliminado', 'success');
+}
+
+/* ---------- Filtros ---------- */
+function applyAdminFilters(list) {
+  const f = state.filters.admin;
+  const q = f.q.toLowerCase();
+  return list.filter(i => {
+    if (q && !(i.title + ' ' + i.description + ' ' + i.address + ' ' + i.id).toLowerCase().includes(q)) return false;
+    if (f.status      && i.status      !== f.status)      return false;
+    if (f.criticality && i.criticality !== f.criticality) return false;
+    if (f.assigned === 'unassigned' && i.assignedProviderId !== null) return false;
+    if (f.assigned && f.assigned !== 'unassigned' && i.assignedProviderId !== f.assigned) return false;
+    return true;
+  });
+}
+
+function applyProviderFilters(list) {
+  const f = state.filters.provider;
+  const q = f.q.toLowerCase();
+  return list.filter(i => {
+    if (q && !(i.title + ' ' + i.description + ' ' + i.address + ' ' + i.id).toLowerCase().includes(q)) return false;
+    if (f.criticality && i.criticality !== f.criticality) return false;
+    return true;
+  });
+}
+
+/* ---------- Render principal ---------- */
+function render() {
+  const u = state.currentUser;
+  if (!u) {
+    views.login().classList.remove('hidden');
+    views.app().classList.add('hidden');
+    views.session().classList.add('hidden');
+    return;
+  }
+  views.login().classList.add('hidden');
+  views.app().classList.remove('hidden');
+  views.session().classList.remove('hidden');
+  $('#sessionText').textContent = `${u.name} (${ROLE_LABELS[u.role]})`;
+
+  if (u.role === 'admin') {
+    views.admin().classList.remove('hidden');
+    views.provider().classList.add('hidden');
+    switchAdminTab(state.ui.adminTab);
+  } else {
+    views.admin().classList.add('hidden');
+    views.provider().classList.remove('hidden');
+    switchProviderTab(state.ui.providerTab);
+  }
+}
+
+/* ---------- Tabs ---------- */
+function switchAdminTab(tab) {
+  state.ui.adminTab = tab;
+  $$('[data-admin-tab]').forEach(b => {
+    const active = b.dataset.adminTab === tab;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-selected', String(active));
+  });
+  ['dashboard', 'incidents', 'create', 'users'].forEach(t => {
+    $(`#admin${t[0].toUpperCase()}${t.slice(1)}Tab`)?.classList.toggle('hidden', t !== tab);
+  });
+
+  if (tab === 'dashboard') renderAdminDashboard();
+  if (tab === 'incidents') { renderAdminFilters(); renderAdminIncidents(); }
+  if (tab === 'users')     renderUsers();
+}
+
+function switchProviderTab(tab) {
+  state.ui.providerTab = tab;
+  $$('[data-provider-tab]').forEach(b => {
+    const active = b.dataset.providerTab === tab;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-selected', String(active));
+  });
+  ['dashboard', 'available', 'mine'].forEach(t => {
+    $(`#provider${t[0].toUpperCase()}${t.slice(1)}Tab`)?.classList.toggle('hidden', t !== tab);
+  });
+
+  if (tab === 'dashboard')              renderProviderDashboard();
+  if (tab === 'available' || tab === 'mine') { renderProviderFilters(); renderProviderLists(); }
+}
+
+/* ---------- Crear incidencia ---------- */
+function createIncident() {
+  const title       = $('#newTitle').value.trim();
+  const address     = $('#newAddress').value.trim();
+  const description = $('#newDescription').value.trim();
+  const criticality = $('#newCriticality').value;
+
+  if (!title || !address || !description) return toast('Completa todos los campos', 'error');
+  if (title.length > 120) return toast('Título demasiado largo', 'error');
+  if (!CRITICALITIES.includes(criticality)) return toast('Criticidad inválida', 'error');
+
+  const now = Date.now();
+  state.incidents.unshift({
+    id: nextIncidentId(),
+    title, address, description, criticality,
+    status: 'Pendiente',
+    assignedProviderId: null,
+    createdBy: myId(),
+    createdAt: now,
+    updatedAt: now,
+    progress: 0,
+    applicants: [],
+    messages: [],
+    budgets: [],
+    invoices: []
+  });
+  saveState();
+  ['#newTitle', '#newAddress', '#newDescription'].forEach(s => { $(s).value = ''; });
+  $('#newCriticality').value = 'Normal';
+  switchAdminTab('incidents');
+  toast('Incidencia creada', 'success');
+}
+
+/* ========================================================================
+ * DASHBOARDS
+ * ====================================================================== */
+function renderAdminDashboard() {
+  const container = $('#adminDashboardTab');
+  container.innerHTML = '';
+
+  const all = state.incidents;
+  const byStatus = {};
+  STATUSES.forEach(s => byStatus[s] = 0);
+  const byCrit = {};
+  CRITICALITIES.forEach(c => byCrit[c] = 0);
+
+  all.forEach(i => {
+    byStatus[i.status] = (byStatus[i.status] || 0) + 1;
+    byCrit[i.criticality] = (byCrit[i.criticality] || 0) + 1;
+  });
+
+  const pending      = all.filter(i => i.status === 'Pendiente').length;
+  const inProgress   = all.filter(i => i.status === 'En Proceso').length;
+  const finished     = all.filter(i => i.status === 'Finalizada').length;
+  const needsReview  = all.filter(i => i.status === 'Requiere Revisión').length;
+  const unassigned   = all.filter(i => !i.assignedProviderId).length;
+  const urgentOpen   = all.filter(i => i.criticality === 'Urgente' && i.status !== 'Finalizada').length;
+  const avgAge       = all.length ? Math.round(all.reduce((s,i)=>s+ageDays(i.createdAt),0) / all.length) : 0;
+
+  // Docs pendientes de revisión (admin)
+  const pendingDocs = all.reduce((sum, i) => {
+    return sum +
+      i.budgets.filter(b => b.status === 'en_revision').length +
+      i.invoices.filter(v => v.status === 'en_revision').length;
+  }, 0);
+
+  // KPI cards
+  const kpis = document.createElement('div');
+  kpis.className = 'kpi-grid';
+  kpis.append(
+    kpiCard('Total incidencias', all.length, 'all'),
+    kpiCard('Pendientes',        pending,    'pending'),
+    kpiCard('En proceso',        inProgress, 'progress'),
+    kpiCard('Finalizadas',       finished,   'done'),
+    kpiCard('Requieren revisión',needsReview,'review'),
+    kpiCard('Sin asignar',       unassigned, 'unassigned'),
+    kpiCard('Urgentes abiertas', urgentOpen, 'urgent'),
+    kpiCard('Docs por revisar',  pendingDocs,'docs'),
+    kpiCard('Antigüedad media',  `${avgAge} d`, 'age'),
+    kpiCard('Proveedores',       providers().length, 'providers')
+  );
+  container.appendChild(kpis);
+
+  // Gráficos simples (barras horizontales con CSS)
+  const charts = document.createElement('div');
+  charts.className = 'dash-charts';
+
+  charts.appendChild(barChart('Por estado', STATUSES.map(s => ({
+    label: s, value: byStatus[s], cls: `status-${slug(s)}`
+  })), all.length));
+
+  charts.appendChild(barChart('Por criticidad', CRITICALITIES.map(c => ({
+    label: c, value: byCrit[c], cls: `crit-${slug(c)}`
+  })), all.length));
+
+  container.appendChild(charts);
+
+  // Lista de incidencias críticas / antiguas
+  const watchList = [...all]
+    .filter(i => i.status !== 'Finalizada')
+    .sort((a, b) => {
+      const ca = critRank(a.criticality), cb = critRank(b.criticality);
+      if (ca !== cb) return cb - ca;
+      return a.createdAt - b.createdAt;
+    })
+    .slice(0, 6);
+
+  const watch = document.createElement('section');
+  watch.className = 'dash-section';
+  const watchHeader = document.createElement('h3');
+  watchHeader.textContent = 'Requieren atención';
+  watch.appendChild(watchHeader);
+
+  if (!watchList.length) {
+    watch.appendChild(emptyState('No hay incidencias abiertas. ¡Bien!'));
+  } else {
+    const list = document.createElement('div');
+    list.className = 'dash-watch-list';
+    watchList.forEach(i => list.appendChild(watchRow(i)));
+    watch.appendChild(list);
+  }
+  container.appendChild(watch);
+}
+
+function critRank(c) { return CRITICALITIES.indexOf(c); }
+
+function kpiCard(label, value, tone) {
+  const el = document.createElement('div');
+  el.className = `kpi kpi-${tone}`;
+  el.innerHTML = '';
+  const v = document.createElement('div'); v.className = 'kpi-value'; v.textContent = String(value);
+  const l = document.createElement('div'); l.className = 'kpi-label'; l.textContent = label;
+  el.append(v, l);
+  return el;
+}
+
+function barChart(title, rows, total) {
+  const wrap = document.createElement('section');
+  wrap.className = 'dash-section';
+  const h = document.createElement('h3'); h.textContent = title; wrap.appendChild(h);
+
+  const list = document.createElement('div'); list.className = 'bar-chart';
+  rows.forEach(({ label, value, cls }) => {
+    const r = document.createElement('div'); r.className = 'bar-row';
+    const lab = document.createElement('div'); lab.className = 'bar-label'; lab.textContent = label;
+    const track = document.createElement('div'); track.className = 'bar-track';
+    const fill = document.createElement('div');
+    fill.className = `bar-fill ${cls}`;
+    const pct = total ? (value / total) * 100 : 0;
+    fill.style.width = pct + '%';
+    track.appendChild(fill);
+    const val = document.createElement('div'); val.className = 'bar-val';
+    val.textContent = `${value}${total ? `  · ${Math.round(pct)}%` : ''}`;
+    r.append(lab, track, val);
+    list.appendChild(r);
+  });
+  wrap.appendChild(list);
+  return wrap;
+}
+
+function watchRow(i) {
+  const row = document.createElement('div');
+  row.className = 'watch-row';
+  row.innerHTML = '';
+  const id   = document.createElement('span'); id.className = 'watch-id'; id.textContent = i.id;
+  const tit  = document.createElement('span'); tit.className = 'watch-title'; tit.textContent = i.title;
+  const crit = document.createElement('span'); crit.className = `priority-badge crit-${slug(i.criticality)}`; crit.textContent = i.criticality;
+  const st   = document.createElement('span'); st.className = `status-badge status-${slug(i.status)}`; st.textContent = i.status;
+  const age  = document.createElement('span'); age.className = 'watch-age'; age.textContent = `${ageDays(i.createdAt)} d`;
+  const goto = document.createElement('button'); goto.type = 'button'; goto.className = 'btn btn-outline btn-sm'; goto.textContent = 'Abrir';
+  goto.onclick = () => { switchAdminTab('incidents'); state.filters.admin.q = i.id; $('#adminFilterQ').value = i.id; renderAdminIncidents(); };
+  row.append(id, tit, crit, st, age, goto);
+  return row;
+}
+
+function renderProviderDashboard() {
+  const container = $('#providerDashboardTab');
+  container.innerHTML = '';
+
+  const mine = state.incidents.filter(i => i.assignedProviderId === myId());
+  const available = state.incidents.filter(i => i.assignedProviderId === null);
+  const mineActive = mine.filter(i => i.status !== 'Finalizada');
+  const mineDone   = mine.filter(i => i.status === 'Finalizada');
+  const myApplied  = state.incidents.filter(i => i.applicants.includes(myId()) && i.assignedProviderId === null);
+  const avgProgress = mineActive.length
+    ? Math.round(mineActive.reduce((s, i) => s + (i.progress || 0), 0) / mineActive.length)
+    : 0;
+
+  const myDocs = mine.flatMap(i => [
+    ...i.budgets.filter(b => b.providerId === myId()).map(d => Object.assign({}, d, { kind: 'budget' })),
+    ...i.invoices.filter(v => v.providerId === myId()).map(d => Object.assign({}, d, { kind: 'invoice' }))
+  ]);
+  const pendingDocs  = myDocs.filter(d => d.status === 'en_revision').length;
+  const approvedDocs = myDocs.filter(d => d.status === 'aprobado').length;
+  const rejectedDocs = myDocs.filter(d => d.status === 'rechazado').length;
+
+  const kpis = document.createElement('div');
+  kpis.className = 'kpi-grid';
+  kpis.append(
+    kpiCard('Mis incidencias activas', mineActive.length, 'progress'),
+    kpiCard('Finalizadas',             mineDone.length,   'done'),
+    kpiCard('Disponibles',             available.length,  'all'),
+    kpiCard('Mis solicitudes',         myApplied.length,  'pending'),
+    kpiCard('Avance medio',            `${avgProgress}%`, 'age'),
+    kpiCard('Docs en revisión',        pendingDocs,       'docs'),
+    kpiCard('Docs aprobados',          approvedDocs,      'done'),
+    kpiCard('Docs rechazados',         rejectedDocs,      'urgent')
+  );
+  container.appendChild(kpis);
+
+  const watch = document.createElement('section');
+  watch.className = 'dash-section';
+  const h = document.createElement('h3');
+  h.textContent = 'Mis trabajos en curso';
+  watch.appendChild(h);
+
+  if (!mineActive.length) {
+    watch.appendChild(emptyState('No tienes trabajos en curso.'));
+  } else {
+    const list = document.createElement('div');
+    list.className = 'dash-watch-list';
+    mineActive
+      .sort((a, b) => critRank(b.criticality) - critRank(a.criticality))
+      .forEach(i => list.appendChild(progressRow(i)));
+    watch.appendChild(list);
+  }
+  container.appendChild(watch);
+}
+
+function progressRow(i) {
+  const row = document.createElement('div');
+  row.className = 'watch-row';
+  const id   = document.createElement('span'); id.className = 'watch-id'; id.textContent = i.id;
+  const tit  = document.createElement('span'); tit.className = 'watch-title'; tit.textContent = i.title;
+  const crit = document.createElement('span'); crit.className = `priority-badge crit-${slug(i.criticality)}`; crit.textContent = i.criticality;
+
+  const prog = document.createElement('div'); prog.className = 'inline-progress';
+  const ptr  = document.createElement('div'); ptr.className = 'bar-track';
+  const pfl  = document.createElement('div'); pfl.className = 'bar-fill bar-progress';
+  pfl.style.width = (i.progress || 0) + '%';
+  ptr.appendChild(pfl);
+  const pct = document.createElement('span'); pct.className = 'progress-pct'; pct.textContent = `${i.progress || 0}%`;
+  prog.append(ptr, pct);
+
+  const goto = document.createElement('button'); goto.type = 'button'; goto.className = 'btn btn-outline btn-sm'; goto.textContent = 'Abrir';
+  goto.onclick = () => {
+    switchProviderTab('mine');
+    state.filters.provider.q = i.id;
+    $('#providerFilterQ').value = i.id;
+    renderProviderLists();
+  };
+  row.append(id, tit, crit, prog, goto);
+  return row;
+}
+
+/* ========================================================================
+ * USUARIOS
+ * ====================================================================== */
+function renderUsers() {
+  const list = $('#usersList');
+  list.innerHTML = '';
+
+  if (!providers().length) {
+    list.appendChild(emptyState('No hay proveedores registrados. Crea el primero usando el formulario.'));
+    return;
+  }
+
+  const tpl = $('#userRowTemplate');
+  providers().forEach(u => {
+    const row = tpl.content.firstElementChild.cloneNode(true);
+    $('.user-name', row).textContent = u.name;
+    const typeEl = $('.user-type', row);
+    typeEl.textContent = TYPE_LABELS[u.type] || '—';
+    typeEl.className = `user-type type-${u.type || 'na'}`;
+    $('.user-username', row).textContent = u.username;
+    $('.user-email', row).textContent    = u.email || '—';
+    $('.user-phone', row).textContent    = u.phone || '—';
+    $('.user-taxid', row).textContent    = u.taxId || '—';
+    const assigned = state.incidents.filter(i => i.assignedProviderId === u.id).length;
+    $('.user-assigned', row).textContent = `${assigned} asignada(s)`;
+
+    $('.user-edit-btn', row).onclick   = () => editUser(u.id);
+    $('.user-delete-btn', row).onclick = () => deleteUser(u.id);
+    list.appendChild(row);
+  });
+}
+
+/* ========================================================================
+ * FILTROS (UI)
+ * ====================================================================== */
+function renderAdminFilters() {
+  const container = $('#adminFilters');
+  if (!container || container.dataset.built === '1') return;
+  container.dataset.built = '1';
+  const q = $('#adminFilterQ'), status = $('#adminFilterStatus'),
+        crit = $('#adminFilterCriticality'), assigned = $('#adminFilterAssigned');
+
+  fillSelect(status, ['', ...STATUSES], v => v || 'Todos los estados');
+  fillSelect(crit,   ['', ...CRITICALITIES], v => v || 'Toda la criticidad');
+  const provOpts = [['', 'Todas las asignaciones'], ['unassigned', 'Sin asignar'],
+                    ...providers().map(p => [p.id, p.name])];
+  fillSelectPairs(assigned, provOpts);
+
+  const onChange = () => {
+    state.filters.admin.q           = q.value;
+    state.filters.admin.status      = status.value;
+    state.filters.admin.criticality = crit.value;
+    state.filters.admin.assigned    = assigned.value;
+    renderAdminIncidents();
+  };
+  q.addEventListener('input', onChange);
+  [status, crit, assigned].forEach(s => s.addEventListener('change', onChange));
+}
+
+function renderProviderFilters() {
+  const container = $('#providerFilters');
+  if (!container || container.dataset.built === '1') return;
+  container.dataset.built = '1';
+  const q = $('#providerFilterQ'), crit = $('#providerFilterCriticality');
+  fillSelect(crit, ['', ...CRITICALITIES], v => v || 'Toda la criticidad');
+  const onChange = () => {
+    state.filters.provider.q           = q.value;
+    state.filters.provider.criticality = crit.value;
+    renderProviderLists();
+  };
+  q.addEventListener('input', onChange);
+  crit.addEventListener('change', onChange);
+}
+
+function fillSelect(sel, values, labelFn) {
+  if (!labelFn) labelFn = function (v) { return v; };
+  sel.innerHTML = '';
+  values.forEach(v => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = labelFn(v);
+    sel.appendChild(o);
+  });
+}
+function fillSelectPairs(sel, pairs) {
+  sel.innerHTML = '';
+  pairs.forEach(([v, t]) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = t;
+    sel.appendChild(o);
+  });
+}
+
+/* ========================================================================
+ * LISTAS DE INCIDENCIAS
+ * ====================================================================== */
+function renderAdminIncidents() {
+  const list = applyAdminFilters(state.incidents);
+  const container = $('#adminIncidentsList');
+  container.innerHTML = '';
+  if (!list.length) {
+    container.appendChild(emptyState('No hay incidencias con esos filtros.'));
+    $('#adminCount').textContent = `0 / ${state.incidents.length}`;
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  list.forEach(i => frag.appendChild(buildIncidentCard(i, 'admin')));
+  container.appendChild(frag);
+  $('#adminCount').textContent = `${list.length} / ${state.incidents.length}`;
+}
+
+function renderProviderLists() {
+  const myUid = myId();
+  const available = applyProviderFilters(state.incidents.filter(i => i.assignedProviderId === null));
+  const mine      = applyProviderFilters(state.incidents.filter(i => i.assignedProviderId === myUid));
+
+  const availEl = $('#providerAvailableList'); availEl.innerHTML = '';
+  const mineEl  = $('#providerMineList');      mineEl.innerHTML  = '';
+
+  if (!available.length) availEl.appendChild(emptyState('No hay incidencias disponibles.'));
+  else available.forEach(i => availEl.appendChild(buildIncidentCard(i, 'provider-available')));
+
+  if (!mine.length) mineEl.appendChild(emptyState('No tienes incidencias adjudicadas.'));
+  else mine.forEach(i => mineEl.appendChild(buildIncidentCard(i, 'provider-mine')));
+
+  $('#providerAvailableCount').textContent = String(available.length);
+  $('#providerMineCount').textContent      = String(mine.length);
+}
+
+function emptyState(text) {
+  const el = document.createElement('div');
+  el.className = 'empty-state';
+  el.textContent = text;
+  return el;
+}
+
+/* ========================================================================
+ * TARJETA DE INCIDENCIA
+ * ====================================================================== */
+function buildIncidentCard(incident, mode) {
+  const tpl = $('#incidentTemplate');
+  const node = tpl.content.firstElementChild.cloneNode(true);
+  node.dataset.id = incident.id;
+
+  $('.incident-title', node).textContent       = `${incident.id} · ${incident.title}`;
+  $('.incident-address', node).textContent     = incident.address;
+  $('.incident-description', node).textContent = incident.description;
+
+  const pb = $('.priority-badge', node);
+  pb.textContent = incident.criticality;
+  pb.className   = `priority-badge crit-${slug(incident.criticality)}`;
+
+  const sb = $('.status-badge', node);
+  sb.textContent = incident.status;
+  sb.className   = `status-badge status-${slug(incident.status)}`;
+
+  const assignedName = incident.assignedProviderId
+    ? (findUser(incident.assignedProviderId)?.name || 'Asignado')
+    : 'Sin asignar';
+  $('.assigned', node).textContent = `Asignación: ${assignedName}`;
+
+  const meta = $('.incident-meta', node);
+  meta.textContent = `Creada ${relativeTime(incident.createdAt)} · ${ageDays(incident.createdAt)} días · Actualizada ${relativeTime(incident.updatedAt)}`;
+  meta.title = `Creada: ${formatDate(incident.createdAt)}\nActualizada: ${formatDate(incident.updatedAt)}`;
+
+  const progressWrap = $('.progress-wrap', node);
+  if (progressWrap) {
+    const fill = $('.bar-fill', progressWrap);
+    fill.style.width = (incident.progress || 0) + '%';
+    $('.progress-pct', progressWrap).textContent = `${incident.progress || 0}%`;
+  }
+
+  buildActions(node, incident, mode);
+  buildDocsSection(node, incident, mode);
+  buildMessages(node, incident);
+
+  return node;
+}
+
+/* ---------- Acciones ---------- */
+function buildActions(node, incident, mode) {
+  const actions = $('.incident-actions', node);
+  actions.innerHTML = '';
+
+  if (mode === 'admin') {
+    const assignSel = document.createElement('select');
+    assignSel.setAttribute('aria-label', 'Asignar proveedor');
+    const ph = document.createElement('option');
+    ph.value = ''; ph.textContent = '— Asignar a... —';
+    assignSel.appendChild(ph);
+
+    providers().forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.id;
+      const applied = incident.applicants.includes(p.id);
+      o.textContent = applied ? `★ ${p.name} (postulado)` : p.name;
+      if (incident.assignedProviderId === p.id) o.selected = true;
+      assignSel.appendChild(o);
+    });
+
+    const assignBtn = button('Asignar', 'btn btn-primary btn-sm');
+    assignBtn.onclick = () => {
+      if (!assignSel.value) return toast('Selecciona un proveedor', 'error');
+      incident.assignedProviderId = assignSel.value;
+      if (incident.status === 'Pendiente') incident.status = 'En Proceso';
+      incident.updatedAt = Date.now();
+      saveState();
+      renderAdminIncidents();
+      toast('Incidencia asignada', 'success');
+    };
+
+    const critSel = document.createElement('select');
+    critSel.setAttribute('aria-label', 'Cambiar criticidad');
+    CRITICALITIES.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c; o.textContent = c;
+      if (incident.criticality === c) o.selected = true;
+      critSel.appendChild(o);
+    });
+    critSel.onchange = () => {
+      incident.criticality = critSel.value;
+      incident.updatedAt = Date.now();
+      saveState();
+      renderAdminIncidents();
+      toast('Criticidad actualizada', 'success');
+    };
+
+    const statusSel = document.createElement('select');
+    statusSel.setAttribute('aria-label', 'Cambiar estado');
+    STATUSES.forEach(s => {
+      const o = document.createElement('option');
+      o.value = s; o.textContent = s;
+      if (incident.status === s) o.selected = true;
+      statusSel.appendChild(o);
+    });
+    statusSel.onchange = () => {
+      incident.status = statusSel.value;
+      if (statusSel.value === 'Finalizada') incident.progress = 100;
+      incident.updatedAt = Date.now();
+      saveState();
+      renderAdminIncidents();
+      toast('Estado actualizado', 'success');
+    };
+
+    const editBtn = button('Editar', 'btn btn-outline btn-sm');
+    editBtn.onclick = () => openEditIncidentDialog(incident);
+
+    const delBtn = button('Eliminar', 'btn btn-danger btn-sm');
+    delBtn.onclick = () => {
+      if (!confirm(`¿Eliminar la incidencia ${incident.id}?`)) return;
+      state.incidents = state.incidents.filter(i => i.id !== incident.id);
+      saveState();
+      renderAdminIncidents();
+      toast('Incidencia eliminada', 'success');
+    };
+
+    actions.append(assignSel, assignBtn, critSel, statusSel, editBtn, delBtn);
+  }
+
+  if (mode === 'provider-available') {
+    const applied = incident.applicants.includes(myId());
+    const reqBtn = button(applied ? 'Solicitud enviada' : 'Postularme', 'btn btn-primary btn-sm');
+    reqBtn.disabled = applied;
+    reqBtn.onclick = () => {
+      if (incident.applicants.includes(myId())) return;
+      incident.applicants.push(myId());
+      incident.messages.push({
+        from: myId(),
+        text: 'Me postulo para esta incidencia.',
+        at: Date.now()
+      });
+      incident.updatedAt = Date.now();
+      saveState();
+      renderProviderLists();
+      toast('Postulación enviada', 'success');
+    };
+    actions.appendChild(reqBtn);
+  }
+
+  if (mode === 'provider-mine') {
+    const progBox = document.createElement('div');
+    progBox.className = 'progress-control';
+    const label = document.createElement('label'); label.textContent = 'Avance: ';
+    const slider = document.createElement('input');
+    slider.type = 'range'; slider.min = '0'; slider.max = '100'; slider.step = '5';
+    slider.value = String(incident.progress || 0);
+    slider.setAttribute('aria-label', 'Porcentaje de avance');
+    const out = document.createElement('output');
+    out.textContent = ` ${slider.value}%`;
+    slider.addEventListener('input', () => out.textContent = ` ${slider.value}%`);
+    slider.addEventListener('change', () => {
+      incident.progress = parseInt(slider.value, 10);
+      if (incident.progress === 100 && incident.status !== 'Finalizada') {
+        incident.status = 'Finalizada';
+      } else if (incident.progress > 0 && incident.status === 'Pendiente') {
+        incident.status = 'En Proceso';
+      }
+      incident.updatedAt = Date.now();
+      saveState();
+      renderProviderLists();
+      toast(`Avance: ${incident.progress}%`, 'success');
+    });
+    progBox.append(label, slider, out);
+
+    const finishBtn = button('Finalizar', 'btn btn-outline btn-sm');
+    finishBtn.disabled = incident.status === 'Finalizada';
+    finishBtn.onclick = () => {
+      incident.status = 'Finalizada';
+      incident.progress = 100;
+      incident.updatedAt = Date.now();
+      saveState();
+      renderProviderLists();
+      toast('Marcada como finalizada', 'success');
+    };
+
+    const reviewBtn = button('Requiere revisión', 'btn btn-outline btn-sm');
+    reviewBtn.onclick = () => {
+      incident.status = 'Requiere Revisión';
+      incident.updatedAt = Date.now();
+      saveState();
+      renderProviderLists();
+      toast('Marcada para revisión', 'info');
+    };
+
+    actions.append(progBox, finishBtn, reviewBtn);
+  }
+}
+
+function openEditIncidentDialog(incident) {
+  const title = prompt('Título:', incident.title);
+  if (title === null) return;
+  const address = prompt('Dirección:', incident.address);
+  if (address === null) return;
+  const description = prompt('Descripción:', incident.description);
+  if (description === null) return;
+  if (!title.trim() || !address.trim() || !description.trim()) return toast('Campos obligatorios', 'error');
+  incident.title = title.trim();
+  incident.address = address.trim();
+  incident.description = description.trim();
+  incident.updatedAt = Date.now();
+  saveState();
+  renderAdminIncidents();
+  toast('Incidencia actualizada', 'success');
+}
+
+/* ========================================================================
+ * DOCUMENTOS (presupuestos / facturas)
+ * ====================================================================== */
+function buildDocsSection(node, incident, mode) {
+  const section = $('.docs-section', node);
+  if (!section) return;
+  section.innerHTML = '';
+
+  const canUpload = mode === 'provider-mine' && incident.assignedProviderId === myId();
+  const canReview = mode === 'admin';
+
+  if (!canUpload && !canReview && !incident.budgets.length && !incident.invoices.length) {
+    section.classList.add('hidden');
+    return;
+  }
+  section.classList.remove('hidden');
+
+  const h = document.createElement('h4'); h.textContent = 'Documentos';
+  section.appendChild(h);
+
+  renderDocList(section, incident, 'budgets',  'Presupuestos', canUpload, canReview);
+  renderDocList(section, incident, 'invoices', 'Facturas',     canUpload, canReview);
+}
+
+function renderDocList(parent, incident, key, title, canUpload, canReview) {
+  const wrap = document.createElement('div');
+  wrap.className = 'docs-group';
+
+  const h = document.createElement('h5'); h.textContent = title;
+  wrap.appendChild(h);
+
+  if (!incident[key].length) {
+    const empty = document.createElement('div');
+    empty.className = 'message-empty';
+    empty.textContent = 'Sin documentos.';
+    wrap.appendChild(empty);
+  } else {
+    incident[key].forEach(doc => wrap.appendChild(docRow(incident, key, doc, canReview)));
+  }
+
+  if (canUpload) {
+    const form = document.createElement('div');
+    form.className = 'doc-upload';
+
+    const fileLabel = document.createElement('label');
+    fileLabel.className = 'btn btn-outline btn-sm';
+    fileLabel.textContent = `+ Subir ${title.toLowerCase().slice(0, -1)} `;
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.pdf,.jpg,.jpeg,.png,.webp';
+    fileInput.style.display = 'none';
+    fileLabel.appendChild(fileInput);
+
+    const amount = document.createElement('input');
+    amount.type = 'number'; amount.step = '0.01'; amount.min = '0';
+    amount.placeholder = 'Importe (€)';
+    amount.className = 'doc-amount';
+
+    fileInput.onchange = async () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      if (file.size > MAX_FILE_BYTES) {
+        toast(`Archivo demasiado grande (máx. ${fmtBytes(MAX_FILE_BYTES)})`, 'error');
+        fileInput.value = '';
+        return;
+      }
+      try {
+        const dataUrl = await readFileAsDataURL(file);
+        incident[key].push({
+          id: uid('doc'),
+          providerId: myId(),
+          filename: file.name,
+          size: file.size,
+          mime: file.type,
+          dataUrl,
+          amount: amount.value ? parseFloat(amount.value) : null,
+          status: 'en_revision',
+          uploadedAt: Date.now(),
+          reviewedAt: null,
+          reviewNote: ''
+        });
+        incident.updatedAt = Date.now();
+        saveState();
+        amount.value = '';
+        fileInput.value = '';
+        renderProviderLists();
+        toast(`${title.slice(0, -1)} subida`, 'success');
+      } catch (err) {
+        console.error(err);
+        toast('Error leyendo el archivo', 'error');
+      }
+    };
+
+    form.append(fileLabel, amount);
+    wrap.appendChild(form);
+  }
+
+  parent.appendChild(wrap);
+}
+
+function docRow(incident, key, doc, canReview) {
+  const row = document.createElement('div');
+  row.className = `doc-row doc-${doc.status}`;
+
+  const info = document.createElement('div'); info.className = 'doc-info';
+  const link = document.createElement('a');
+  link.href = doc.dataUrl;
+  link.download = doc.filename;
+  link.textContent = doc.filename;
+  link.target = '_blank';
+  link.rel = 'noopener';
+  const meta = document.createElement('span');
+  meta.className = 'doc-meta';
+  const provName = userName(doc.providerId);
+  meta.textContent = `${provName} · ${fmtBytes(doc.size || 0)} · ${relativeTime(doc.uploadedAt)}${doc.amount != null ? ` · ${doc.amount.toFixed(2)} €` : ''}`;
+  info.append(link, meta);
+
+  const status = document.createElement('span');
+  status.className = `doc-status doc-status-${doc.status}`;
+  status.textContent = DOC_STATUSES[doc.status];
+
+  row.append(info, status);
+
+  if (canReview) {
+    const acts = document.createElement('div'); acts.className = 'doc-actions';
+    const approve = button('Aprobar', 'btn btn-sm btn-success');
+    approve.disabled = doc.status === 'aprobado';
+    approve.onclick = () => updateDocStatus(incident, doc, 'aprobado');
+    const reject = button('Rechazar', 'btn btn-sm btn-danger');
+    reject.disabled = doc.status === 'rechazado';
+    reject.onclick = () => updateDocStatus(incident, doc, 'rechazado');
+    const reset = button('Revisar', 'btn btn-sm btn-outline');
+    reset.disabled = doc.status === 'en_revision';
+    reset.onclick = () => updateDocStatus(incident, doc, 'en_revision');
+    const del = button('×', 'btn btn-sm btn-ghost');
+    del.title = 'Eliminar documento';
+    del.onclick = () => {
+      if (!confirm('¿Eliminar este documento?')) return;
+      incident[key] = incident[key].filter(d => d.id !== doc.id);
+      incident.updatedAt = Date.now();
+      saveState();
+      renderAdminIncidents();
+    };
+    acts.append(approve, reject, reset, del);
+    row.appendChild(acts);
+  }
+
+  return row;
+}
+
+function updateDocStatus(incident, doc, newStatus) {
+  doc.status = newStatus;
+  doc.reviewedAt = Date.now();
+  incident.updatedAt = Date.now();
+  saveState();
+  if (isAdmin()) renderAdminIncidents();
+  else renderProviderLists();
+  toast(`Documento ${DOC_STATUSES[newStatus].toLowerCase()}`, 'success');
+}
+
+/* ========================================================================
+ * MENSAJES
+ * ====================================================================== */
+function buildMessages(node, incident) {
+  const messagesEl = $('.messages', node);
+  messagesEl.innerHTML = '';
+
+  if (!incident.messages.length) {
+    const empty = document.createElement('div');
+    empty.className = 'message-empty';
+    empty.textContent = 'Sin mensajes todavía.';
+    messagesEl.appendChild(empty);
+  } else {
+    incident.messages.forEach(m => {
+      const item = document.createElement('div');
+      item.className = `message-item ${m.from === myId() ? 'mine' : ''}`;
+      const who = document.createElement('b'); who.textContent = userName(m.from);
+      const txt = document.createElement('span'); txt.textContent = ` ${m.text}`;
+      const time = document.createElement('time');
+      time.className = 'message-time';
+      time.textContent = relativeTime(m.at);
+      time.title = formatDate(m.at);
+      item.append(who, txt, time);
+      messagesEl.appendChild(item);
+    });
+  }
+
+  const input = $('.message-input', node);
+  const send  = $('.send-message-btn', node);
+  const sendHandler = () => {
+    const text = input.value.trim();
+    if (!text) return;
+    if (text.length > 500) return toast('Mensaje demasiado largo', 'error');
+    incident.messages.push({ from: myId(), text, at: Date.now() });
+    incident.updatedAt = Date.now();
+    saveState();
+    input.value = '';
+    if (isAdmin()) renderAdminIncidents();
+    else renderProviderLists();
+  };
+  send.onclick = sendHandler;
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendHandler(); }
+  });
+}
+
+function button(label, className) {
+  if (!className) className = 'btn btn-outline';
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = className;
+  b.textContent = label;
+  return b;
+}
+
+/* ========================================================================
+ * EVENTOS
+ * ====================================================================== */
+function bindEvents() {
+  $('#loginBtn').addEventListener('click', login);
+  $('#logoutBtn').addEventListener('click', logout);
+  $('#createIncidentBtn').addEventListener('click', createIncident);
+
+  ['usernameInput', 'passwordInput'].forEach(id => {
+    $('#' + id).addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+  });
+
+  $$('[data-admin-tab]').forEach(btn => {
+    btn.addEventListener('click', () => switchAdminTab(btn.dataset.adminTab));
+  });
+  $$('[data-provider-tab]').forEach(btn => {
+    btn.addEventListener('click', () => switchProviderTab(btn.dataset.providerTab));
+  });
+
+  const userForm = $('#userForm');
+  if (userForm) userForm.addEventListener('submit', submitUserForm);
+  const cancelEdit = $('#cancelEditUserBtn');
+  if (cancelEdit) cancelEdit.addEventListener('click', () => { resetUserForm(); toast('Edición cancelada', 'info'); });
+
+  const resetBtn = $('#resetBtn');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      if (!confirm('¿Restablecer todos los datos a la demo?')) return;
+      localStorage.removeItem(STORAGE_KEY);
+      sessionStorage.removeItem(SESSION_KEY);
+      state.currentUser = null;
+      state.users = structuredClone(DEFAULT_USERS);
+      state.incidents = structuredClone(DEFAULT_INCIDENTS);
+      saveState();
+      render();
+      toast('Datos restablecidos', 'success');
+    });
+  }
+}
+
+function init() {
+  loadState();
+  bindEvents();
+  render();
+}
+
+document.addEventListener('DOMContentLoaded', init);

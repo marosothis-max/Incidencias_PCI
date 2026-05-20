@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Urban PSI — gestión de incidencias, proveedores y documentación." />
+  <title>Urban PSI · Gestión de Incidencias</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- Cabecera -->
+  <header class="app-header">
+    <div class="brand">
+      <!-- Logo SVG inspirado en el logo Urban PSI -->
+      <svg class="brand-logo" viewBox="0 0 64 64" aria-hidden="true">
+        <rect x="6"  y="6"  width="22" height="22" fill="var(--brand-green)"/>
+        <rect x="26" y="12" width="22" height="22" fill="var(--brand-green-2)"/>
+        <rect x="14" y="26" width="22" height="22" fill="var(--brand-green-3)"/>
+      </svg>
+      <div class="brand-text">
+        <h1 class="brand-title">Urban<span class="brand-title-light">PSI</span></h1>
+        <p class="brand-sub">Gestión de incidencias</p>
+      </div>
+    </div>
+
+    <div id="sessionInfo" class="session hidden">
+      <span id="sessionText" class="session-text"></span>
+      <button id="resetBtn" class="btn btn-ghost" type="button" title="Restablecer datos de demo">Restablecer demo</button>
+      <button id="logoutBtn" class="btn btn-outline" type="button">Salir</button>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <!-- Login -->
+    <section id="loginView" class="login-view" aria-labelledby="loginTitle">
+      <div class="login-card">
+        <h2 id="loginTitle">Iniciar sesión</h2>
+        <p class="muted">
+          Demo: <code>admin</code> · <code>fontaneria_lopez</code> · <code>electricidad_norte</code><br>
+          Contraseña: <code>1234</code>
+        </p>
+
+        <label for="usernameInput">Usuario</label>
+        <input id="usernameInput" type="text" autocomplete="username" placeholder="admin" />
+
+        <label for="passwordInput">Contraseña</label>
+        <input id="passwordInput" type="password" autocomplete="current-password" placeholder="••••" />
+
+        <button id="loginBtn" class="btn btn-primary btn-block" type="button">Entrar</button>
+      </div>
+    </section>
+
+    <!-- App -->
+    <section id="appView" class="hidden">
+
+      <!-- ========== ADMIN ========== -->
+      <section id="adminView" class="hidden" aria-labelledby="adminTitle">
+        <h2 id="adminTitle" class="sr-only">Panel de administración</h2>
+
+        <nav class="tabs" role="tablist" aria-label="Secciones de administración">
+          <button class="tab active" data-admin-tab="dashboard" role="tab" aria-selected="true" type="button">Dashboard</button>
+          <button class="tab"        data-admin-tab="incidents" role="tab" aria-selected="false" type="button">Incidencias</button>
+          <button class="tab"        data-admin-tab="create"    role="tab" aria-selected="false" type="button">+ Crear</button>
+          <button class="tab"        data-admin-tab="users"     role="tab" aria-selected="false" type="button">Proveedores</button>
+        </nav>
+
+        <!-- Tab: Dashboard -->
+        <div id="adminDashboardTab" class="tab-panel" role="tabpanel" aria-live="polite"></div>
+
+        <!-- Tab: Incidencias -->
+        <div id="adminIncidentsTab" class="tab-panel hidden" role="tabpanel">
+          <div id="adminFilters" class="filters">
+            <input id="adminFilterQ" type="search" placeholder="Buscar (título, dirección, ID...)" aria-label="Buscar incidencias" />
+            <select id="adminFilterStatus" aria-label="Filtrar por estado"></select>
+            <select id="adminFilterCriticality" aria-label="Filtrar por criticidad"></select>
+            <select id="adminFilterAssigned" aria-label="Filtrar por asignación"></select>
+            <span class="count">Mostrando <span id="adminCount">0</span></span>
+          </div>
+          <div id="adminIncidentsList" class="incidents-list" aria-live="polite"></div>
+        </div>
+
+        <!-- Tab: Crear -->
+        <div id="adminCreateTab" class="tab-panel hidden" role="tabpanel">
+          <div class="form-card">
+            <h3>Nueva incidencia</h3>
+
+            <label for="newTitle">Título</label>
+            <input id="newTitle" type="text" maxlength="120" placeholder="Ej. Fuga en cocina" />
+
+            <label for="newAddress">Dirección</label>
+            <input id="newAddress" type="text" maxlength="200" placeholder="Calle, número, piso..." />
+
+            <label for="newDescription">Descripción</label>
+            <textarea id="newDescription" rows="4" maxlength="1000" placeholder="Detalles de la incidencia..."></textarea>
+
+            <label for="newCriticality">Criticidad</label>
+            <select id="newCriticality">
+              <option value="Baja">Baja</option>
+              <option value="Normal" selected>Normal</option>
+              <option value="Alta">Alta</option>
+              <option value="Urgente">Urgente</option>
+            </select>
+
+            <button id="createIncidentBtn" class="btn btn-primary" type="button">Crear incidencia</button>
+          </div>
+        </div>
+
+        <!-- Tab: Usuarios -->
+        <div id="adminUsersTab" class="tab-panel hidden" role="tabpanel">
+          <div class="users-layout">
+            <form id="userForm" class="form-card">
+              <h3 id="userFormTitle">Nuevo proveedor</h3>
+
+              <label for="userName">Nombre / Razón social</label>
+              <input id="userName" type="text" maxlength="120" required />
+
+              <label for="userType">Tipo</label>
+              <select id="userType" required>
+                <option value="autonomo">Autónomo</option>
+                <option value="empresa">Empresa</option>
+              </select>
+
+              <div class="form-row">
+                <div>
+                  <label for="userUsername">Usuario</label>
+                  <input id="userUsername" type="text" maxlength="40" required />
+                </div>
+                <div>
+                  <label for="userPassword">Contraseña</label>
+                  <input id="userPassword" type="text" maxlength="40" required />
+                </div>
+              </div>
+
+              <label for="userEmail">Email</label>
+              <input id="userEmail" type="email" maxlength="120" />
+
+              <div class="form-row">
+                <div>
+                  <label for="userPhone">Teléfono</label>
+                  <input id="userPhone" type="text" maxlength="30" />
+                </div>
+                <div>
+                  <label for="userTaxId">NIF / CIF</label>
+                  <input id="userTaxId" type="text" maxlength="20" />
+                </div>
+              </div>
+
+              <div class="form-actions">
+                <button id="submitUserBtn" class="btn btn-primary" type="submit">Crear proveedor</button>
+                <button id="cancelEditUserBtn" class="btn btn-outline hidden" type="button">Cancelar</button>
+              </div>
+            </form>
+
+            <div class="users-list-wrap">
+              <h3>Proveedores registrados</h3>
+              <div id="usersList" class="users-list" aria-live="polite"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== PROVEEDOR ========== -->
+      <section id="providerView" class="hidden" aria-labelledby="providerTitle">
+        <h2 id="providerTitle" class="sr-only">Panel de proveedor</h2>
+
+        <nav class="tabs" role="tablist" aria-label="Secciones del proveedor">
+          <button class="tab active" data-provider-tab="dashboard" role="tab" aria-selected="true"  type="button">Dashboard</button>
+          <button class="tab"        data-provider-tab="available" role="tab" aria-selected="false" type="button">
+            Disponibles <span class="pill" id="providerAvailableCount">0</span>
+          </button>
+          <button class="tab"        data-provider-tab="mine"      role="tab" aria-selected="false" type="button">
+            Mis incidencias <span class="pill" id="providerMineCount">0</span>
+          </button>
+        </nav>
+
+        <!-- Tab: Dashboard -->
+        <div id="providerDashboardTab" class="tab-panel" role="tabpanel" aria-live="polite"></div>
+
+        <!-- Filtros (compartidos available/mine) -->
+        <div id="providerFilters" class="filters">
+          <input id="providerFilterQ" type="search" placeholder="Buscar..." aria-label="Buscar incidencias" />
+          <select id="providerFilterCriticality" aria-label="Filtrar por criticidad"></select>
+        </div>
+
+        <div id="providerAvailableTab" class="tab-panel hidden" role="tabpanel">
+          <div id="providerAvailableList" class="incidents-list" aria-live="polite"></div>
+        </div>
+
+        <div id="providerMineTab" class="tab-panel hidden" role="tabpanel">
+          <div id="providerMineList" class="incidents-list" aria-live="polite"></div>
+        </div>
+      </section>
+
+    </section>
+
+  </main>
+
+  <footer class="app-footer">
+    <small>Urban PSI · demo local — los datos se guardan en este navegador.</small>
+  </footer>
+
+  <!-- ============= TEMPLATES ============= -->
+  <template id="incidentTemplate">
+    <article class="incident-card">
+      <header class="incident-header">
+        <h3 class="incident-title"></h3>
+        <div class="badges">
+          <span class="priority-badge"></span>
+          <span class="status-badge"></span>
+        </div>
+      </header>
+      <p class="incident-address"></p>
+      <p class="incident-description"></p>
+      <p class="assigned muted"></p>
+      <p class="incident-meta muted"></p>
+
+      <div class="progress-wrap" aria-label="Progreso de la tarea">
+        <div class="bar-track"><div class="bar-fill bar-progress"></div></div>
+        <span class="progress-pct">0%</span>
+      </div>
+
+      <div class="incident-actions"></div>
+
+      <section class="docs-section hidden"></section>
+
+      <section class="messages-section">
+        <h4>Mensajes</h4>
+        <div class="messages"></div>
+        <div class="message-composer">
+          <input class="message-input" type="text" maxlength="500" placeholder="Escribe un mensaje y pulsa Enter..." aria-label="Nuevo mensaje" />
+          <button class="send-message-btn btn btn-outline btn-sm" type="button">Enviar</button>
+        </div>
+      </section>
+    </article>
+  </template>
+
+  <template id="userRowTemplate">
+    <div class="user-row">
+      <div class="user-info">
+        <div class="user-line-1">
+          <strong class="user-name"></strong>
+          <span class="user-type"></span>
+        </div>
+        <div class="user-line-2 muted">
+          <span class="user-username"></span> ·
+          <span class="user-email"></span> ·
+          <span class="user-phone"></span> ·
+          NIF/CIF: <span class="user-taxid"></span>
+        </div>
+        <div class="user-line-3 muted">
+          <span class="user-assigned"></span>
+        </div>
+      </div>
+      <div class="user-actions">
+        <button class="user-edit-btn btn btn-outline btn-sm" type="button">Editar</button>
+        <button class="user-delete-btn btn btn-danger btn-sm" type="button">Eliminar</button>
+      </div>
+    </div>
+  </template>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
