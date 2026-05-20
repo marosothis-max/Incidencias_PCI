@@ -1,6 +1,124 @@
 /* =========================================================================
- * Urban PSI — Gestión de Incidencias · v3 (Inter + diseño moderno)
+ * Urban PSI — Gestión de Incidencias · v5 (Demo segura / Mock Architecture)
  * ========================================================================= */
+
+/* ============================================================
+ * FASE 3: BANNER DEMO
+ * ========================================================== */
+.demo-banner {
+  background: linear-gradient(90deg, #1e3a5f 0%, #2d527a 60%, #1e3a5f 100%);
+  color: rgba(255,255,255,.92);
+  text-align: center;
+  padding: 7px 20px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: .01em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  border-bottom: 1px solid rgba(255,255,255,.1);
+}
+.demo-banner strong { font-weight: 700; color: #fbbf24; }
+.demo-banner svg   { flex-shrink: 0; opacity: .8; }
+
+/* ============================================================
+ * FASE 2: MODAL SIMULACIÓN SERVIDOR
+ * ========================================================== */
+.sim-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15,23,42,.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: fadeIn .2s ease;
+}
+.sim-modal-overlay.hidden { display: none; }
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+.sim-modal-box {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 40px 36px 32px;
+  max-width: 440px;
+  width: 92%;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,.25);
+  animation: slideUp .25s ease;
+  border-top: 4px solid var(--success);
+}
+.sim-modal-icon {
+  width: 64px;
+  height: 64px;
+  background: rgba(22,163,74,.12);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 18px;
+  color: var(--success);
+}
+.sim-modal-title {
+  margin: 0 0 10px;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+}
+.sim-modal-msg {
+  margin: 0 0 8px;
+  font-size: 15px;
+  color: var(--text);
+  font-weight: 500;
+}
+.sim-modal-note {
+  margin: 0 0 24px;
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
+.sim-modal-btn { min-width: 140px; }
+
+/* ============================================================
+ * FASE 3: CHECKBOX RGPD
+ * ========================================================== */
+.rgpd-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 14px 16px;
+  background: rgba(37,99,235,.06);
+  border: 1.5px solid rgba(37,99,235,.2);
+  border-radius: var(--radius-sm);
+}
+.rgpd-wrap input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  min-width: 17px;
+  margin-top: 2px;
+  accent-color: var(--info);
+  cursor: pointer;
+}
+.rgpd-label {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text);
+  cursor: pointer;
+  margin: 0;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.rgpd-label strong { color: var(--info); }
+.rgpd-label em     { color: var(--muted); font-style: italic; }
 
 :root {
   --brand-navy:    #1e3a5f;
@@ -78,7 +196,7 @@ html, body {
   flex-wrap: wrap;
   gap: 12px;
   position: sticky;
-  top: 0;
+  top: 33px; /* deja espacio al demo-banner sticky */
   z-index: 100;
   box-shadow: var(--shadow);
 }

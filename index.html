@@ -11,6 +11,25 @@
 </head>
 <body>
 
+  <!-- FASE 3: Banner entorno de demostración -->
+  <div class="demo-banner" role="alert" aria-live="polite">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <span>Entorno de Demostración / MVP Estático &mdash; Todos los datos mostrados son <strong>simulados</strong> para fines de presentación. No se realizan peticiones reales al servidor.</span>
+  </div>
+
+  <!-- FASE 2: Modal simulación de servidor -->
+  <div id="simModal" class="sim-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="simModalTitle" aria-hidden="true">
+    <div class="sim-modal-box">
+      <div class="sim-modal-icon">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      </div>
+      <h3 id="simModalTitle" class="sim-modal-title">Conexión simulada con el servidor</h3>
+      <p id="simModalMsg" class="sim-modal-msg"></p>
+      <p class="sim-modal-note">Este es un entorno de pruebas. No se han enviado datos reales a ningún servidor.</p>
+      <button id="simModalClose" class="btn btn-primary sim-modal-btn" type="button">Entendido</button>
+    </div>
+  </div>
+
   <!-- Cabecera -->
   <header class="app-header">
     <div class="brand">
@@ -117,7 +136,15 @@
               <option value="Urgente">Urgente</option>
             </select>
 
-            <button id="createIncidentBtn" class="btn btn-primary" type="button">Crear incidencia</button>
+            <!-- FASE 3: Checkbox RGPD obligatorio -->
+            <div class="rgpd-wrap">
+              <input id="rgpdCheck" type="checkbox" />
+              <label for="rgpdCheck" class="rgpd-label">
+                Acepto los <strong>términos de privacidad</strong> <em>(Simulación RGPD)</em> y confirmo que los datos introducidos son ficticios y se usan únicamente con fines de demostración.
+              </label>
+            </div>
+
+            <button id="createIncidentBtn" class="btn btn-primary" type="button">Registrar incidencia</button>
           </div>
         </div>
 
@@ -225,7 +252,10 @@
   </main>
 
   <footer class="app-footer">
-    <small>Urban PSI · los datos se guardan en este navegador.</small>
+    <small>
+      Urban PSI · Entorno de Demostración &mdash; Datos simulados para fines de presentación.<br>
+      Los datos se almacenan únicamente en este navegador (localStorage). No se realizan peticiones externas.
+    </small>
   </footer>
 
   <!-- ============= TEMPLATES ============= -->

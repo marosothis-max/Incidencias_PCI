@@ -6,8 +6,8 @@
 'use strict';
 
 /* ---------- Constantes ---------- */
-const STORAGE_KEY = 'urban_psi_state_v4';
-const SESSION_KEY = 'urban_psi_session_v4';
+const STORAGE_KEY = 'urban_psi_state_v5';
+const SESSION_KEY = 'urban_psi_session_v5';
 
 const CRITICALITIES  = ['Baja', 'Normal', 'Alta', 'Urgente'];
 const STATUSES       = ['Pendiente', 'En Proceso', 'Finalizada', 'Requiere Revisión'];
@@ -27,24 +27,26 @@ const MAX_FILE_BYTES = 2 * 1024 * 1024;
 /* ---------- Datos por defecto (semilla) ---------- */
 const NOW = Date.now();
 
+/* ⚠️ DEMO — contraseñas de acceso ficticias solo para entorno de presentación */
 const DEFAULT_USERS = [
   { id: 'u-admin', username: 'admin', password: '3016', role: 'admin',
-    name: 'Gestor Urban PSI', type: null, email: 'admin@urbanpsi.local',
+    name: 'Administrador Demo', type: null, email: 'admin@demo-urbanpsi.test',
     phone: '', taxId: '', createdAt: NOW },
-  { id: 'u-p1', username: 'fontaneria_lopez', password: '1234', role: 'provider',
-    name: 'Fontanería López', type: 'empresa', email: 'contacto@fontanerialopez.es',
-    phone: '600 111 222', taxId: 'B12345678', createdAt: NOW },
-  { id: 'u-p2', username: 'electricidad_norte', password: '1234', role: 'provider',
-    name: 'Electricidad Norte', type: 'autonomo', email: 'juan@electricidadnorte.es',
-    phone: '600 333 444', taxId: '12345678Z', createdAt: NOW }
+  { id: 'u-p1', username: 'instalaciones_acme', password: '1234', role: 'provider',
+    name: 'Instalaciones ACME S.L.', type: 'empresa', email: 'contacto@acme-simulacion.test',
+    phone: '+34 634 000 001', taxId: 'B00000001', createdAt: NOW },
+  { id: 'u-p2', username: 'mantenimientos_omega', password: '1234', role: 'provider',
+    name: 'Mantenimientos Omega S.A.', type: 'autonomo', email: 'info@omega-simulacion.test',
+    phone: '+34 611 000 002', taxId: '00000002Z', createdAt: NOW }
 ];
 
+/* ⚠️ DEMO — incidencias totalmente ficticias para entorno de presentación */
 const DEFAULT_INCIDENTS = [
   {
     id: 'INC-001',
-    title: 'Fuga en baño habitación 2',
-    address: 'C/ Mayor 14, Piso 2A',
-    description: 'Revisar fuga en tubería de lavabo. Posible cambio de latiguillo.',
+    title: 'Revisión de extintores CO₂ — Planta 2',
+    address: 'Polígono Industrial de la Simulación, Nave 14-B',
+    description: 'Verificación periódica de extintores CO₂ en Planta 2. Dos unidades presentan presión fuera de rango. Requiere recarga y precinto.',
     criticality: 'Urgente',
     status: 'Pendiente',
     assignedProviderId: null,
@@ -60,9 +62,9 @@ const DEFAULT_INCIDENTS = [
   },
   {
     id: 'INC-002',
-    title: 'Fallo de iluminación pasillo',
-    address: 'Av. Central 8, Piso 1B',
-    description: 'No encienden 2 focos del pasillo, revisar instalación.',
+    title: 'Detector de humos sin respuesta — Pasillo Norte',
+    address: 'Calle de las Pruebas, 42, Edificio Demo — Planta Baja',
+    description: 'Detector óptico ref. DH-204 sin señal en test manual. Posible fallo de sensor o pérdida de alimentación. Inspeccionar cableado y unidad central.',
     criticality: 'Normal',
     status: 'En Proceso',
     assignedProviderId: 'u-p2',
@@ -71,9 +73,29 @@ const DEFAULT_INCIDENTS = [
     updatedAt: NOW - 3_600_000,
     progress: 40,
     applicants: ['u-p2'],
-    applications: [{ providerId: 'u-p2', amount: 320, note: '', appliedAt: NOW - 86_400_000 * 4 }],
+    applications: [{ providerId: 'u-p2', amount: 480, note: 'Incluye sustitución de sensor y revisión de central.', appliedAt: NOW - 86_400_000 * 4 }],
     messages: [
-      { from: 'u-admin', text: 'Revisar cuadro eléctrico antes de cambiar focos.', at: NOW - 3_600_000 }
+      { from: 'u-admin', text: 'Verificar también el módulo de la central Notifier antes de reemplazar el detector.', at: NOW - 3_600_000 }
+    ],
+    budgets: [],
+    invoices: []
+  },
+  {
+    id: 'INC-003',
+    title: 'Mantenimiento anual rociadores — Zona Almacén',
+    address: 'Avda. de la Demostración, 99 — Nave Almacén Central',
+    description: 'Revisión anual obligatoria del sistema de rociadores automáticos. Comprobar válvulas de control, cabezas rociadores y alarma de flujo.',
+    criticality: 'Alta',
+    status: 'Finalizada',
+    assignedProviderId: 'u-p1',
+    createdBy: 'u-admin',
+    createdAt: NOW - 86_400_000 * 15,
+    updatedAt: NOW - 86_400_000 * 3,
+    progress: 100,
+    applicants: ['u-p1'],
+    applications: [{ providerId: 'u-p1', amount: 1200, note: 'Revisión completa según normativa UNE-EN 12845.', appliedAt: NOW - 86_400_000 * 14 }],
+    messages: [
+      { from: 'u-p1', text: 'Trabajo completado. Todas las cabezas verificadas. Certificado adjunto.', at: NOW - 86_400_000 * 3 }
     ],
     budgets: [],
     invoices: []
@@ -212,6 +234,37 @@ function readFileAsDataURL(file) {
     r.onerror = rej;
     r.readAsDataURL(file);
   });
+}
+
+/* ---------- Masking de datos sensibles (FASE 1) ---------- */
+function maskEmail(email) {
+  if (!email || !email.includes('@')) return '—';
+  const [local, domain] = email.split('@');
+  return `${local.slice(0, 3)}***@${domain}`;
+}
+
+function maskPhone(phone) {
+  if (!phone) return '—';
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length < 6) return phone;
+  return phone.slice(0, 7) + '***' + phone.slice(-2);
+}
+
+/* ---------- Modal simulación de servidor (FASE 2) ---------- */
+function showServerSimModal(action = 'Operación completada') {
+  let overlay = $('#simModal');
+  if (!overlay) return;
+  $('#simModalMsg').textContent = `${action} con éxito en el entorno de pruebas.`;
+  overlay.classList.remove('hidden');
+  overlay.setAttribute('aria-hidden', 'false');
+  const close = () => {
+    overlay.classList.add('hidden');
+    overlay.setAttribute('aria-hidden', 'true');
+  };
+  $('#simModalClose').onclick = close;
+  overlay.onclick = e => { if (e.target === overlay) close(); };
+  clearTimeout(overlay._autoClose);
+  overlay._autoClose = setTimeout(close, 6000);
 }
 
 /* ---------- Toast ---------- */
@@ -471,10 +524,10 @@ function submitUserForm(ev) {
     const u = findUser(id);
     if (!u) return toast('Usuario no encontrado', 'error');
     Object.assign(u, data);
-    toast('Usuario actualizado', 'success');
+    showServerSimModal('Proveedor actualizado en el servidor simulado');
   } else {
     state.users.push({ id: uid('u'), role: 'provider', createdAt: Date.now(), ...data });
-    toast('Usuario creado', 'success');
+    showServerSimModal('Proveedor registrado en el servidor simulado');
   }
   saveState(); resetUserForm(); renderUsers();
 }
@@ -607,10 +660,12 @@ function createIncident() {
   const address     = $('#newAddress').value.trim();
   const description = $('#newDescription').value.trim();
   const criticality = $('#newCriticality').value;
+  const rgpd        = $('#rgpdCheck');
 
   if (!title || !address || !description) return toast('Completa todos los campos', 'error');
   if (title.length > 120) return toast('Título demasiado largo', 'error');
   if (!CRITICALITIES.includes(criticality)) return toast('Criticidad inválida', 'error');
+  if (rgpd && !rgpd.checked) return toast('Debes aceptar los términos de privacidad (RGPD) para continuar', 'error');
 
   const now    = Date.now();
   const newInc = {
@@ -621,7 +676,6 @@ function createIncident() {
   };
   state.incidents.unshift(newInc);
 
-  // Notificar a todos los proveedores
   providers().forEach(p => addNotification(
     p.id, `Nueva incidencia disponible: ${title} (${criticality})`, 'info', newInc.id
   ));
@@ -629,8 +683,10 @@ function createIncident() {
   saveState();
   ['#newTitle','#newAddress','#newDescription'].forEach(s => { $(s).value = ''; });
   $('#newCriticality').value = 'Normal';
+  if (rgpd) rgpd.checked = false;
+
+  showServerSimModal('Incidencia registrada en el servidor simulado');
   switchAdminTab('incidents');
-  toast('Incidencia creada', 'success');
 }
 
 /* ========================================================================
@@ -934,9 +990,9 @@ function renderUsers() {
     typeEl.textContent = TYPE_LABELS[u.type] || '—';
     typeEl.className   = `user-type type-${u.type||'na'}`;
     $('.user-username',row).textContent = u.username;
-    $('.user-password',row).textContent = u.password;
-    $('.user-email',row).textContent    = u.email || '—';
-    $('.user-phone',row).textContent    = u.phone || '—';
+    $('.user-password',row).textContent = '•'.repeat(u.password.length);
+    $('.user-email',row).textContent    = maskEmail(u.email);
+    $('.user-phone',row).textContent    = maskPhone(u.phone);
     $('.user-taxid',row).textContent    = u.taxId || '—';
     const assigned = state.incidents.filter(i => i.assignedProviderId === u.id).length;
     $('.user-assigned',row).textContent = `${assigned} asignada(s)`;
