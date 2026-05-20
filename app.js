@@ -1,13 +1,13 @@
 /* =========================================================================
- * Urban PSI — Gestión de Incidencias
- * v2: usuarios CRUD, dashboard, criticidad, % avance, presupuestos/facturas
+ * Urban PSI — Gestión de Incidencias v3
+ * Notificaciones · Postulación con presupuesto · Chart.js
  * ========================================================================= */
 
 'use strict';
 
 /* ---------- Constantes ---------- */
-const STORAGE_KEY = 'urban_psi_state_v2';
-const SESSION_KEY = 'urban_psi_session_v2';
+const STORAGE_KEY = 'urban_psi_state_v3';
+const SESSION_KEY = 'urban_psi_session_v3';
 
 const CRITICALITIES = ['Baja', 'Normal', 'Alta', 'Urgente'];
 const STATUSES      = ['Pendiente', 'En Proceso', 'Finalizada', 'Requiere Revisión'];
@@ -22,11 +22,22 @@ const DOC_STATUSES = {
   rechazado:   'Rechazado'
 };
 
-const MAX_FILE_BYTES = 2 * 1024 * 1024; // 2 MB por archivo
+const MAX_FILE_BYTES = 2 * 1024 * 1024;
 
 /* ---------- Datos por defecto (semilla) ---------- */
 const NOW = Date.now();
 
+const DEFAULT_USERS = [
+  { id: 'u-admin', username: 'admin', password: '1234', role: 'admin',
+    name: 'Gestor Urban PSI', type: null, email: 'admin@urbanpsi.local',
+    phone: '', taxId: '', createdAt: NOW },
+  { id: 'u-p1', username: 'fontaneria_lopez', password: '1234', role: 'provider',
+    name: 'Fontanería López', type: 'empresa', email: 'contacto@fontanerialopez.es',
+    phone: '600 111 222', taxId: 'B12345678', createdAt: NOW },
+  { id: 'u-p2', username: 'electricidad_norte', password: '1234', role: 'provider',
+    name: 'Electricidad Norte', type: 'autonomo', email: 'juan@electricidadnorte.es',
+    phone: '600 333 444', taxId: '12345678Z', createdAt: NOW }
+];
 
 const DEFAULT_INCIDENTS = [
   {
@@ -42,6 +53,7 @@ const DEFAULT_INCIDENTS = [
     updatedAt: NOW - 86_400_000 * 2,
     progress: 0,
     applicants: [],
+    applications: [],
     messages: [],
     budgets: [],
     invoices: []
@@ -59,6 +71,7 @@ const DEFAULT_INCIDENTS = [
     updatedAt: NOW - 3_600_000,
     progress: 40,
     applicants: ['u-p2'],
+    applications: [{ providerId: 'u-p2', amount: 320, note: '', appliedAt: NOW - 86_400_000 * 4 }],
     messages: [
       { from: 'u-admin', text: 'Revisar cuadro eléctrico antes de cambiar focos.', at: NOW - 3_600_000 }
     ],
@@ -71,6 +84,7 @@ const DEFAULT_INCIDENTS = [
 const state = {
   users: [],
   incidents: [],
+  notifications: [],
   currentUser: null,
   filters: {
     admin:    { q: '', status: '', criticality: '', assigned: '' },
@@ -85,25 +99,28 @@ function loadState() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const d = JSON.parse(raw);
-      state.users     = Array.isArray(d.users)     ? d.users     : structuredClone(DEFAULT_USERS);
-      state.incidents = Array.isArray(d.incidents) ? d.incidents : structuredClone(DEFAULT_INCIDENTS);
-      // Migración suave por si faltan campos
+      state.users         = Array.isArray(d.users)         ? d.users         : structuredClone(DEFAULT_USERS);
+      state.incidents     = Array.isArray(d.incidents)     ? d.incidents     : structuredClone(DEFAULT_INCIDENTS);
+      state.notifications = Array.isArray(d.notifications) ? d.notifications : [];
       state.incidents.forEach(i => {
-        if (!Array.isArray(i.applicants)) i.applicants = [];
-        if (!Array.isArray(i.budgets))    i.budgets = [];
-        if (!Array.isArray(i.invoices))   i.invoices = [];
-        if (typeof i.progress !== 'number') i.progress = 0;
-        if (!i.criticality && i.priority) i.criticality = i.priority;
+        if (!Array.isArray(i.applicants))    i.applicants    = [];
+        if (!Array.isArray(i.applications))  i.applications  = [];
+        if (!Array.isArray(i.budgets))       i.budgets       = [];
+        if (!Array.isArray(i.invoices))      i.invoices      = [];
+        if (typeof i.progress !== 'number')  i.progress      = 0;
+        if (!i.criticality && i.priority)    i.criticality   = i.priority;
       });
     } else {
-      state.users     = structuredClone(DEFAULT_USERS);
-      state.incidents = structuredClone(DEFAULT_INCIDENTS);
+      state.users         = structuredClone(DEFAULT_USERS);
+      state.incidents     = structuredClone(DEFAULT_INCIDENTS);
+      state.notifications = [];
       saveState();
     }
   } catch (err) {
     console.warn('Estado corrupto, usando semilla.', err);
-    state.users     = structuredClone(DEFAULT_USERS);
-    state.incidents = structuredClone(DEFAULT_INCIDENTS);
+    state.users         = structuredClone(DEFAULT_USERS);
+    state.incidents     = structuredClone(DEFAULT_INCIDENTS);
+    state.notifications = [];
   }
 
   try {
@@ -115,7 +132,7 @@ function loadState() {
 function saveState() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      users: state.users, incidents: state.incidents
+      users: state.users, incidents: state.incidents, notifications: state.notifications
     }));
   } catch (err) {
     console.error('Error guardando:', err);
@@ -136,12 +153,12 @@ const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
 const uid = (prefix = 'id') => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
-function findUser(id)   { return state.users.find(u => u.id === id) || null; }
+function findUser(id)    { return state.users.find(u => u.id === id) || null; }
 function findIncident(id){ return state.incidents.find(i => i.id === id) || null; }
-function userName(id)   { return findUser(id)?.name || 'Usuario'; }
-function providers()    { return state.users.filter(u => u.role === 'provider'); }
-function isAdmin()      { return state.currentUser?.role === 'admin'; }
-function myId()         { return state.currentUser?.id; }
+function userName(id)    { return findUser(id)?.name || 'Usuario'; }
+function providers()     { return state.users.filter(u => u.role === 'provider'); }
+function isAdmin()       { return state.currentUser?.role === 'admin'; }
+function myId()          { return state.currentUser?.id; }
 
 function nextIncidentId() {
   const max = state.incidents
@@ -212,7 +229,116 @@ function toast(message, type = 'info') {
   el.textContent = message;
   el.className = `toast toast-${type} show`;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3400);
+}
+
+/* ========================================================================
+ * NOTIFICACIONES
+ * ====================================================================== */
+function addNotification(toUserId, message, type = 'info', incidentId = null) {
+  state.notifications.unshift({
+    id: uid('notif'),
+    toUserId,
+    message,
+    type,
+    incidentId,
+    read: false,
+    at: Date.now()
+  });
+  // Limitar a 50 notificaciones
+  if (state.notifications.length > 50) state.notifications.length = 50;
+  saveState();
+  renderNotifBadge();
+}
+
+function myNotifications() {
+  return state.notifications.filter(n => n.toUserId === myId());
+}
+
+function renderNotifBadge() {
+  const badge = $('#notifBadge');
+  if (!badge) return;
+  const count = myNotifications().filter(n => !n.read).length;
+  if (count > 0) {
+    badge.textContent = count > 9 ? '9+' : String(count);
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+function renderNotifPanel() {
+  const panel = $('#notifPanel');
+  if (!panel) return;
+  panel.innerHTML = '';
+
+  const notifs = myNotifications();
+
+  const header = document.createElement('div');
+  header.className = 'notif-header';
+  header.innerHTML = `<span>Notificaciones</span>`;
+  if (notifs.some(n => !n.read)) {
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'notif-clear-btn';
+    clearBtn.textContent = 'Marcar todo como leído';
+    clearBtn.onclick = (e) => {
+      e.stopPropagation();
+      notifs.forEach(n => { n.read = true; });
+      saveState();
+      renderNotifBadge();
+      renderNotifPanel();
+    };
+    header.appendChild(clearBtn);
+  }
+  panel.appendChild(header);
+
+  if (!notifs.length) {
+    const empty = document.createElement('div');
+    empty.className = 'notif-empty';
+    empty.textContent = 'No tienes notificaciones.';
+    panel.appendChild(empty);
+    return;
+  }
+
+  notifs.forEach(n => {
+    const item = document.createElement('div');
+    item.className = `notif-item ${n.read ? '' : 'unread'}`;
+    item.onclick = () => {
+      n.read = true;
+      saveState();
+      renderNotifBadge();
+      renderNotifPanel();
+      // Navegar a la incidencia si existe
+      if (n.incidentId) {
+        if (isAdmin()) {
+          state.filters.admin.q = n.incidentId;
+          switchAdminTab('incidents');
+          if ($('#adminFilterQ')) $('#adminFilterQ').value = n.incidentId;
+          renderAdminIncidents();
+        } else {
+          state.filters.provider.q = n.incidentId;
+          if ($('#providerFilterQ')) $('#providerFilterQ').value = n.incidentId;
+          switchProviderTab('mine');
+          renderProviderLists();
+        }
+        panel.classList.add('hidden');
+      }
+    };
+
+    const dot = document.createElement('div');
+    dot.className = `notif-dot ${n.read ? 'read' : ''}`;
+
+    const text = document.createElement('div');
+    text.className = 'notif-text';
+    text.textContent = n.message;
+    const time = document.createElement('div');
+    time.className = 'notif-time';
+    time.textContent = relativeTime(n.at);
+    text.appendChild(time);
+
+    item.append(dot, text);
+    panel.appendChild(item);
+  });
 }
 
 /* ---------- Vistas ---------- */
@@ -377,6 +503,7 @@ function render() {
   views.app().classList.remove('hidden');
   views.session().classList.remove('hidden');
   $('#sessionText').textContent = `${u.name} (${ROLE_LABELS[u.role]})`;
+  renderNotifBadge();
 
   if (u.role === 'admin') {
     views.admin().classList.remove('hidden');
@@ -433,7 +560,7 @@ function createIncident() {
   if (!CRITICALITIES.includes(criticality)) return toast('Criticidad inválida', 'error');
 
   const now = Date.now();
-  state.incidents.unshift({
+  const newInc = {
     id: nextIncidentId(),
     title, address, description, criticality,
     status: 'Pendiente',
@@ -443,10 +570,21 @@ function createIncident() {
     updatedAt: now,
     progress: 0,
     applicants: [],
+    applications: [],
     messages: [],
     budgets: [],
     invoices: []
+  };
+  state.incidents.unshift(newInc);
+
+  // Notificar a todos los proveedores
+  providers().forEach(p => {
+    addNotification(p.id,
+      `Nueva incidencia disponible: ${title} (${criticality})`,
+      'info', newInc.id
+    );
   });
+
   saveState();
   ['#newTitle', '#newAddress', '#newDescription'].forEach(s => { $(s).value = ''; });
   $('#newCriticality').value = 'Normal';
@@ -457,7 +595,16 @@ function createIncident() {
 /* ========================================================================
  * DASHBOARDS
  * ====================================================================== */
+let adminCharts = {};
+let providerCharts = {};
+
+function destroyCharts(chartsObj) {
+  Object.values(chartsObj).forEach(c => { try { c.destroy(); } catch (_) {} });
+  Object.keys(chartsObj).forEach(k => delete chartsObj[k]);
+}
+
 function renderAdminDashboard() {
+  destroyCharts(adminCharts);
   const container = $('#adminDashboardTab');
   container.innerHTML = '';
 
@@ -480,45 +627,100 @@ function renderAdminDashboard() {
   const urgentOpen   = all.filter(i => i.criticality === 'Urgente' && i.status !== 'Finalizada').length;
   const avgAge       = all.length ? Math.round(all.reduce((s,i)=>s+ageDays(i.createdAt),0) / all.length) : 0;
 
-  // Docs pendientes de revisión (admin)
   const pendingDocs = all.reduce((sum, i) => {
     return sum +
       i.budgets.filter(b => b.status === 'en_revision').length +
       i.invoices.filter(v => v.status === 'en_revision').length;
   }, 0);
 
-  // KPI cards
+  // Postulaciones pendientes de aprobar
+  const pendingApps = all.reduce((sum, i) => {
+    return sum + (i.assignedProviderId === null ? i.applications.length : 0);
+  }, 0);
+
   const kpis = document.createElement('div');
   kpis.className = 'kpi-grid';
   kpis.append(
-    kpiCard('Total incidencias', all.length, 'all'),
-    kpiCard('Pendientes',        pending,    'pending'),
-    kpiCard('En proceso',        inProgress, 'progress'),
-    kpiCard('Finalizadas',       finished,   'done'),
-    kpiCard('Requieren revisión',needsReview,'review'),
-    kpiCard('Sin asignar',       unassigned, 'unassigned'),
-    kpiCard('Urgentes abiertas', urgentOpen, 'urgent'),
-    kpiCard('Docs por revisar',  pendingDocs,'docs'),
-    kpiCard('Antigüedad media',  `${avgAge} d`, 'age'),
-    kpiCard('Proveedores',       providers().length, 'providers')
+    kpiCard('Total',              all.length,            'all'),
+    kpiCard('Pendientes',         pending,               'pending'),
+    kpiCard('En proceso',         inProgress,            'progress'),
+    kpiCard('Finalizadas',        finished,              'done'),
+    kpiCard('Requieren revisión', needsReview,           'review'),
+    kpiCard('Sin asignar',        unassigned,            'unassigned'),
+    kpiCard('Urgentes abiertas',  urgentOpen,            'urgent'),
+    kpiCard('Docs por revisar',   pendingDocs,           'docs'),
+    kpiCard('Postulaciones',      pendingApps,           'providers'),
+    kpiCard('Antigüedad media',   `${avgAge} d`,         'age'),
+    kpiCard('Proveedores',        providers().length,    'providers')
   );
   container.appendChild(kpis);
 
-  // Gráficos simples (barras horizontales con CSS)
+  // Charts Chart.js
   const charts = document.createElement('div');
   charts.className = 'dash-charts';
 
-  charts.appendChild(barChart('Por estado', STATUSES.map(s => ({
-    label: s, value: byStatus[s], cls: `status-${slug(s)}`
-  })), all.length));
+  // Gráfico donut — por estado
+  const sec1 = document.createElement('section');
+  sec1.className = 'dash-section';
+  const h1 = document.createElement('h3'); h1.textContent = 'Por estado';
+  const wrap1 = document.createElement('div'); wrap1.className = 'chart-wrap';
+  const canvas1 = document.createElement('canvas'); canvas1.id = 'chartStatus';
+  wrap1.appendChild(canvas1);
+  sec1.append(h1, wrap1);
 
-  charts.appendChild(barChart('Por criticidad', CRITICALITIES.map(c => ({
-    label: c, value: byCrit[c], cls: `crit-${slug(c)}`
-  })), all.length));
+  // Gráfico donut — por criticidad
+  const sec2 = document.createElement('section');
+  sec2.className = 'dash-section';
+  const h2 = document.createElement('h3'); h2.textContent = 'Por criticidad';
+  const wrap2 = document.createElement('div'); wrap2.className = 'chart-wrap';
+  const canvas2 = document.createElement('canvas'); canvas2.id = 'chartCrit';
+  wrap2.appendChild(canvas2);
+  sec2.append(h2, wrap2);
 
+  charts.append(sec1, sec2);
   container.appendChild(charts);
 
-  // Lista de incidencias críticas / antiguas
+  // Renderizar charts después de insertar en DOM
+  requestAnimationFrame(() => {
+    const chartDefaults = {
+      plugins: {
+        legend: { position: 'bottom', labels: { font: { family: 'Inter', size: 12 }, padding: 12 } }
+      },
+      animation: { duration: 700, easing: 'easeOutQuart' }
+    };
+
+    adminCharts.status = new Chart(canvas1, {
+      type: 'doughnut',
+      data: {
+        labels: STATUSES,
+        datasets: [{
+          data: STATUSES.map(s => byStatus[s]),
+          backgroundColor: ['#94a3b8', '#3b82f6', '#22c55e', '#f59e0b'],
+          borderWidth: 2,
+          borderColor: '#fff',
+          hoverOffset: 8
+        }]
+      },
+      options: { ...chartDefaults, cutout: '62%' }
+    });
+
+    adminCharts.crit = new Chart(canvas2, {
+      type: 'doughnut',
+      data: {
+        labels: CRITICALITIES,
+        datasets: [{
+          data: CRITICALITIES.map(c => byCrit[c]),
+          backgroundColor: ['#7fb77e', '#3b82f6', '#f59e0b', '#ef4444'],
+          borderWidth: 2,
+          borderColor: '#fff',
+          hoverOffset: 8
+        }]
+      },
+      options: { ...chartDefaults, cutout: '62%' }
+    });
+  });
+
+  // Lista de incidencias prioritarias
   const watchList = [...all]
     .filter(i => i.status !== 'Finalizada')
     .sort((a, b) => {
@@ -530,12 +732,11 @@ function renderAdminDashboard() {
 
   const watch = document.createElement('section');
   watch.className = 'dash-section';
-  const watchHeader = document.createElement('h3');
-  watchHeader.textContent = 'Requieren atención';
-  watch.appendChild(watchHeader);
+  const wh = document.createElement('h3'); wh.textContent = 'Requieren atención';
+  watch.appendChild(wh);
 
   if (!watchList.length) {
-    watch.appendChild(emptyState('No hay incidencias abiertas. ¡Bien!'));
+    watch.appendChild(emptyState('No hay incidencias abiertas. ¡Todo en orden!'));
   } else {
     const list = document.createElement('div');
     list.className = 'dash-watch-list';
@@ -543,6 +744,37 @@ function renderAdminDashboard() {
     watch.appendChild(list);
   }
   container.appendChild(watch);
+
+  // Incidencias con postulaciones pendientes
+  const withApps = all.filter(i => i.assignedProviderId === null && i.applications.length > 0);
+  if (withApps.length) {
+    const appsSec = document.createElement('section');
+    appsSec.className = 'dash-section';
+    const ah = document.createElement('h3'); ah.textContent = `Postulaciones sin aprobar (${withApps.length})`;
+    appsSec.appendChild(ah);
+    const appsList = document.createElement('div');
+    appsList.className = 'dash-watch-list';
+    withApps.forEach(i => {
+      const row = document.createElement('div');
+      row.className = 'watch-row';
+      const id  = document.createElement('span'); id.className = 'watch-id'; id.textContent = i.id;
+      const tit = document.createElement('span'); tit.className = 'watch-title'; tit.textContent = i.title;
+      const cnt = document.createElement('span'); cnt.className = 'status-badge status-pendiente';
+      cnt.textContent = `${i.applications.length} postulaci${i.applications.length === 1 ? 'ón' : 'ones'}`;
+      const go  = document.createElement('button'); go.type = 'button';
+      go.className = 'btn btn-primary btn-sm'; go.textContent = 'Revisar';
+      go.onclick = () => {
+        state.filters.admin.q = i.id;
+        switchAdminTab('incidents');
+        if ($('#adminFilterQ')) $('#adminFilterQ').value = i.id;
+        renderAdminIncidents();
+      };
+      row.append(id, tit, cnt, go);
+      appsList.appendChild(row);
+    });
+    appsSec.appendChild(appsList);
+    container.appendChild(appsSec);
+  }
 }
 
 function critRank(c) { return CRITICALITIES.indexOf(c); }
@@ -550,53 +782,33 @@ function critRank(c) { return CRITICALITIES.indexOf(c); }
 function kpiCard(label, value, tone) {
   const el = document.createElement('div');
   el.className = `kpi kpi-${tone}`;
-  el.innerHTML = '';
   const v = document.createElement('div'); v.className = 'kpi-value'; v.textContent = String(value);
   const l = document.createElement('div'); l.className = 'kpi-label'; l.textContent = label;
   el.append(v, l);
   return el;
 }
 
-function barChart(title, rows, total) {
-  const wrap = document.createElement('section');
-  wrap.className = 'dash-section';
-  const h = document.createElement('h3'); h.textContent = title; wrap.appendChild(h);
-
-  const list = document.createElement('div'); list.className = 'bar-chart';
-  rows.forEach(({ label, value, cls }) => {
-    const r = document.createElement('div'); r.className = 'bar-row';
-    const lab = document.createElement('div'); lab.className = 'bar-label'; lab.textContent = label;
-    const track = document.createElement('div'); track.className = 'bar-track';
-    const fill = document.createElement('div');
-    fill.className = `bar-fill ${cls}`;
-    const pct = total ? (value / total) * 100 : 0;
-    fill.style.width = pct + '%';
-    track.appendChild(fill);
-    const val = document.createElement('div'); val.className = 'bar-val';
-    val.textContent = `${value}${total ? `  · ${Math.round(pct)}%` : ''}`;
-    r.append(lab, track, val);
-    list.appendChild(r);
-  });
-  wrap.appendChild(list);
-  return wrap;
-}
-
 function watchRow(i) {
   const row = document.createElement('div');
   row.className = 'watch-row';
-  row.innerHTML = '';
   const id   = document.createElement('span'); id.className = 'watch-id'; id.textContent = i.id;
   const tit  = document.createElement('span'); tit.className = 'watch-title'; tit.textContent = i.title;
   const crit = document.createElement('span'); crit.className = `priority-badge crit-${slug(i.criticality)}`; crit.textContent = i.criticality;
   const st   = document.createElement('span'); st.className = `status-badge status-${slug(i.status)}`; st.textContent = i.status;
   const age  = document.createElement('span'); age.className = 'watch-age'; age.textContent = `${ageDays(i.createdAt)} d`;
-  const goto = document.createElement('button'); goto.type = 'button'; goto.className = 'btn btn-outline btn-sm'; goto.textContent = 'Abrir';
-  goto.onclick = () => { switchAdminTab('incidents'); state.filters.admin.q = i.id; $('#adminFilterQ').value = i.id; renderAdminIncidents(); };
-  row.append(id, tit, crit, st, age, goto);
+  const go   = document.createElement('button'); go.type = 'button'; go.className = 'btn btn-outline btn-sm'; go.textContent = 'Abrir';
+  go.onclick = () => {
+    switchAdminTab('incidents');
+    state.filters.admin.q = i.id;
+    $('#adminFilterQ').value = i.id;
+    renderAdminIncidents();
+  };
+  row.append(id, tit, crit, st, age, go);
   return row;
 }
 
 function renderProviderDashboard() {
+  destroyCharts(providerCharts);
   const container = $('#providerDashboardTab');
   container.innerHTML = '';
 
@@ -604,7 +816,9 @@ function renderProviderDashboard() {
   const available = state.incidents.filter(i => i.assignedProviderId === null);
   const mineActive = mine.filter(i => i.status !== 'Finalizada');
   const mineDone   = mine.filter(i => i.status === 'Finalizada');
-  const myApplied  = state.incidents.filter(i => i.applicants.includes(myId()) && i.assignedProviderId === null);
+  const myApplied  = state.incidents.filter(i =>
+    i.applicants.includes(myId()) && i.assignedProviderId === null
+  );
   const avgProgress = mineActive.length
     ? Math.round(mineActive.reduce((s, i) => s + (i.progress || 0), 0) / mineActive.length)
     : 0;
@@ -620,22 +834,64 @@ function renderProviderDashboard() {
   const kpis = document.createElement('div');
   kpis.className = 'kpi-grid';
   kpis.append(
-    kpiCard('Mis incidencias activas', mineActive.length, 'progress'),
-    kpiCard('Finalizadas',             mineDone.length,   'done'),
-    kpiCard('Disponibles',             available.length,  'all'),
-    kpiCard('Mis solicitudes',         myApplied.length,  'pending'),
-    kpiCard('Avance medio',            `${avgProgress}%`, 'age'),
-    kpiCard('Docs en revisión',        pendingDocs,       'docs'),
-    kpiCard('Docs aprobados',          approvedDocs,      'done'),
-    kpiCard('Docs rechazados',         rejectedDocs,      'urgent')
+    kpiCard('Activas',        mineActive.length,   'progress'),
+    kpiCard('Finalizadas',    mineDone.length,     'done'),
+    kpiCard('Disponibles',    available.length,    'all'),
+    kpiCard('Mis solicitudes',myApplied.length,    'pending'),
+    kpiCard('Avance medio',   `${avgProgress}%`,   'age'),
+    kpiCard('Docs en revisión',pendingDocs,        'docs'),
+    kpiCard('Docs aprobados', approvedDocs,        'done'),
+    kpiCard('Docs rechazados',rejectedDocs,        'urgent')
   );
   container.appendChild(kpis);
 
+  // Chart: progreso de mis trabajos activos
+  if (mineActive.length > 0) {
+    const sec = document.createElement('section');
+    sec.className = 'dash-section';
+    const h = document.createElement('h3'); h.textContent = 'Progreso de mis trabajos';
+    const wrap = document.createElement('div'); wrap.className = 'chart-wrap';
+    const canvas = document.createElement('canvas'); canvas.id = 'chartProvProgress';
+    wrap.appendChild(canvas);
+    sec.append(h, wrap);
+    container.appendChild(sec);
+
+    requestAnimationFrame(() => {
+      providerCharts.progress = new Chart(canvas, {
+        type: 'bar',
+        data: {
+          labels: mineActive.map(i => i.id),
+          datasets: [{
+            label: 'Avance (%)',
+            data: mineActive.map(i => i.progress || 0),
+            backgroundColor: mineActive.map(i => {
+              const p = i.progress || 0;
+              if (p >= 80) return '#22c55e';
+              if (p >= 40) return '#3b82f6';
+              return '#f59e0b';
+            }),
+            borderRadius: 6,
+            borderSkipped: false
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } },
+            y: { grid: { display: false } }
+          },
+          animation: { duration: 600, easing: 'easeOutQuart' }
+        }
+      });
+    });
+  }
+
+  // Mis trabajos en curso
   const watch = document.createElement('section');
   watch.className = 'dash-section';
-  const h = document.createElement('h3');
-  h.textContent = 'Mis trabajos en curso';
-  watch.appendChild(h);
+  const wh = document.createElement('h3'); wh.textContent = 'Mis trabajos en curso';
+  watch.appendChild(wh);
 
   if (!mineActive.length) {
     watch.appendChild(emptyState('No tienes trabajos en curso.'));
@@ -665,14 +921,14 @@ function progressRow(i) {
   const pct = document.createElement('span'); pct.className = 'progress-pct'; pct.textContent = `${i.progress || 0}%`;
   prog.append(ptr, pct);
 
-  const goto = document.createElement('button'); goto.type = 'button'; goto.className = 'btn btn-outline btn-sm'; goto.textContent = 'Abrir';
-  goto.onclick = () => {
+  const go = document.createElement('button'); go.type = 'button'; go.className = 'btn btn-outline btn-sm'; go.textContent = 'Abrir';
+  go.onclick = () => {
     switchProviderTab('mine');
     state.filters.provider.q = i.id;
     $('#providerFilterQ').value = i.id;
     renderProviderLists();
   };
-  row.append(id, tit, crit, prog, goto);
+  row.append(id, tit, crit, prog, go);
   return row;
 }
 
@@ -751,7 +1007,7 @@ function renderProviderFilters() {
 }
 
 function fillSelect(sel, values, labelFn) {
-  if (!labelFn) labelFn = function (v) { return v; };
+  if (!labelFn) labelFn = v => v;
   sel.innerHTML = '';
   values.forEach(v => {
     const o = document.createElement('option');
@@ -817,7 +1073,8 @@ function emptyState(text) {
 function buildIncidentCard(incident, mode) {
   const tpl = $('#incidentTemplate');
   const node = tpl.content.firstElementChild.cloneNode(true);
-  node.dataset.id = incident.id;
+  node.dataset.id   = incident.id;
+  node.dataset.crit = incident.criticality;
 
   $('.incident-title', node).textContent       = `${incident.id} · ${incident.title}`;
   $('.incident-address', node).textContent     = incident.address;
@@ -833,11 +1090,13 @@ function buildIncidentCard(incident, mode) {
 
   const assignedName = incident.assignedProviderId
     ? (findUser(incident.assignedProviderId)?.name || 'Asignado')
-    : 'Sin asignar';
+    : incident.applications.length > 0
+      ? `${incident.applications.length} postulaci${incident.applications.length === 1 ? 'ón' : 'ones'} pendiente${incident.applications.length === 1 ? '' : 's'}`
+      : 'Sin asignar';
   $('.assigned', node).textContent = `Asignación: ${assignedName}`;
 
   const meta = $('.incident-meta', node);
-  meta.textContent = `Creada ${relativeTime(incident.createdAt)} · ${ageDays(incident.createdAt)} días · Actualizada ${relativeTime(incident.updatedAt)}`;
+  meta.textContent = `Creada ${relativeTime(incident.createdAt)} · ${ageDays(incident.createdAt)} d · Actualizada ${relativeTime(incident.updatedAt)}`;
   meta.title = `Creada: ${formatDate(incident.createdAt)}\nActualizada: ${formatDate(incident.updatedAt)}`;
 
   const progressWrap = $('.progress-wrap', node);
@@ -860,32 +1119,34 @@ function buildActions(node, incident, mode) {
   actions.innerHTML = '';
 
   if (mode === 'admin') {
-    const assignSel = document.createElement('select');
-    assignSel.setAttribute('aria-label', 'Asignar proveedor');
-    const ph = document.createElement('option');
-    ph.value = ''; ph.textContent = '— Asignar a... —';
-    assignSel.appendChild(ph);
-
-    providers().forEach(p => {
+    // Selector de estado
+    const statusSel = document.createElement('select');
+    statusSel.setAttribute('aria-label', 'Cambiar estado');
+    STATUSES.forEach(s => {
       const o = document.createElement('option');
-      o.value = p.id;
-      const applied = incident.applicants.includes(p.id);
-      o.textContent = applied ? `★ ${p.name} (postulado)` : p.name;
-      if (incident.assignedProviderId === p.id) o.selected = true;
-      assignSel.appendChild(o);
+      o.value = s; o.textContent = s;
+      if (incident.status === s) o.selected = true;
+      statusSel.appendChild(o);
     });
-
-    const assignBtn = button('Asignar', 'btn btn-primary btn-sm');
-    assignBtn.onclick = () => {
-      if (!assignSel.value) return toast('Selecciona un proveedor', 'error');
-      incident.assignedProviderId = assignSel.value;
-      if (incident.status === 'Pendiente') incident.status = 'En Proceso';
+    statusSel.onchange = () => {
+      const prev = incident.status;
+      incident.status = statusSel.value;
+      if (statusSel.value === 'Finalizada') incident.progress = 100;
       incident.updatedAt = Date.now();
       saveState();
+      // Notificar al proveedor asignado
+      if (incident.assignedProviderId) {
+        addNotification(
+          incident.assignedProviderId,
+          `${incident.id} cambió de estado: ${prev} → ${incident.status}`,
+          'info', incident.id
+        );
+      }
       renderAdminIncidents();
-      toast('Incidencia asignada', 'success');
+      toast('Estado actualizado', 'success');
     };
 
+    // Selector criticidad
     const critSel = document.createElement('select');
     critSel.setAttribute('aria-label', 'Cambiar criticidad');
     CRITICALITIES.forEach(c => {
@@ -902,23 +1163,6 @@ function buildActions(node, incident, mode) {
       toast('Criticidad actualizada', 'success');
     };
 
-    const statusSel = document.createElement('select');
-    statusSel.setAttribute('aria-label', 'Cambiar estado');
-    STATUSES.forEach(s => {
-      const o = document.createElement('option');
-      o.value = s; o.textContent = s;
-      if (incident.status === s) o.selected = true;
-      statusSel.appendChild(o);
-    });
-    statusSel.onchange = () => {
-      incident.status = statusSel.value;
-      if (statusSel.value === 'Finalizada') incident.progress = 100;
-      incident.updatedAt = Date.now();
-      saveState();
-      renderAdminIncidents();
-      toast('Estado actualizado', 'success');
-    };
-
     const editBtn = button('Editar', 'btn btn-outline btn-sm');
     editBtn.onclick = () => openEditIncidentDialog(incident);
 
@@ -931,40 +1175,184 @@ function buildActions(node, incident, mode) {
       toast('Incidencia eliminada', 'success');
     };
 
-    actions.append(assignSel, assignBtn, critSel, statusSel, editBtn, delBtn);
+    actions.append(critSel, statusSel, editBtn, delBtn);
+
+    // Sección de postulaciones (con presupuesto)
+    if (incident.applications.length > 0 && !incident.assignedProviderId) {
+      const appsSec = document.createElement('div');
+      appsSec.className = 'applicants-section';
+      const appsH = document.createElement('h5');
+      appsH.textContent = `Postulaciones recibidas (${incident.applications.length})`;
+      appsSec.appendChild(appsH);
+
+      incident.applications.forEach(app => {
+        const prov = findUser(app.providerId);
+        if (!prov) return;
+        const row = document.createElement('div');
+        row.className = 'applicant-row';
+
+        const info = document.createElement('div');
+        const name = document.createElement('div'); name.className = 'applicant-name'; name.textContent = prov.name;
+        const date = document.createElement('div'); date.className = 'applicant-date'; date.textContent = relativeTime(app.appliedAt);
+        if (app.note) { const note = document.createElement('div'); note.className = 'applicant-date'; note.textContent = `Nota: ${app.note}`; info.appendChild(note); }
+        info.append(name, date);
+
+        const amount = document.createElement('div');
+        amount.className = 'applicant-amount';
+        amount.textContent = app.amount != null ? `${Number(app.amount).toFixed(2)} €` : 'Sin importe';
+
+        const approveBtn = button('Aprobar', 'btn btn-success btn-sm');
+        approveBtn.onclick = () => {
+          incident.assignedProviderId = app.providerId;
+          if (incident.status === 'Pendiente') incident.status = 'En Proceso';
+          incident.updatedAt = Date.now();
+          saveState();
+          // Notificar al proveedor aprobado
+          addNotification(
+            app.providerId,
+            `Tu postulación para ${incident.id} (${incident.title}) fue aprobada. ¡Estás asignado!`,
+            'success', incident.id
+          );
+          // Notificar a los rechazados
+          incident.applications
+            .filter(a => a.providerId !== app.providerId)
+            .forEach(a => addNotification(
+              a.providerId,
+              `La incidencia ${incident.id} fue asignada a otro proveedor.`,
+              'info', incident.id
+            ));
+          renderAdminIncidents();
+          renderNotifBadge();
+          toast(`Asignado a ${prov.name}`, 'success');
+        };
+
+        row.append(info, amount, approveBtn);
+        appsSec.appendChild(row);
+      });
+
+      actions.appendChild(appsSec);
+    } else if (incident.assignedProviderId) {
+      // Asignación directa (sin postulaciones)
+      const assignSel = document.createElement('select');
+      assignSel.setAttribute('aria-label', 'Reasignar proveedor');
+      const ph = document.createElement('option');
+      ph.value = ''; ph.textContent = '— Reasignar... —';
+      assignSel.appendChild(ph);
+      providers().forEach(p => {
+        const o = document.createElement('option');
+        o.value = p.id; o.textContent = p.name;
+        if (incident.assignedProviderId === p.id) o.selected = true;
+        assignSel.appendChild(o);
+      });
+      const reassignBtn = button('Reasignar', 'btn btn-outline btn-sm');
+      reassignBtn.onclick = () => {
+        if (!assignSel.value) return toast('Selecciona un proveedor', 'error');
+        incident.assignedProviderId = assignSel.value;
+        incident.updatedAt = Date.now();
+        saveState();
+        addNotification(assignSel.value, `Has sido asignado/a a la incidencia ${incident.id}: ${incident.title}`, 'info', incident.id);
+        renderAdminIncidents();
+        toast('Reasignado', 'success');
+      };
+      actions.append(assignSel, reassignBtn);
+    } else {
+      // Sin postulaciones: asignación directa
+      const assignSel = document.createElement('select');
+      assignSel.setAttribute('aria-label', 'Asignar proveedor');
+      const ph = document.createElement('option');
+      ph.value = ''; ph.textContent = '— Asignar directamente —';
+      assignSel.appendChild(ph);
+      providers().forEach(p => {
+        const o = document.createElement('option'); o.value = p.id; o.textContent = p.name;
+        assignSel.appendChild(o);
+      });
+      const assignBtn = button('Asignar', 'btn btn-primary btn-sm');
+      assignBtn.onclick = () => {
+        if (!assignSel.value) return toast('Selecciona un proveedor', 'error');
+        incident.assignedProviderId = assignSel.value;
+        if (incident.status === 'Pendiente') incident.status = 'En Proceso';
+        incident.updatedAt = Date.now();
+        saveState();
+        addNotification(assignSel.value, `Has sido asignado/a a la incidencia ${incident.id}: ${incident.title}`, 'info', incident.id);
+        renderAdminIncidents();
+        toast('Incidencia asignada', 'success');
+      };
+      actions.append(assignSel, assignBtn);
+    }
   }
 
   if (mode === 'provider-available') {
-    const applied = incident.applicants.includes(myId());
-    const reqBtn = button(applied ? 'Solicitud enviada' : 'Postularme', 'btn btn-primary btn-sm');
-    reqBtn.disabled = applied;
-    reqBtn.onclick = () => {
-      if (incident.applicants.includes(myId())) return;
-      incident.applicants.push(myId());
-      incident.messages.push({
-        from: myId(),
-        text: 'Me postulo para esta incidencia.',
-        at: Date.now()
-      });
-      incident.updatedAt = Date.now();
-      saveState();
-      renderProviderLists();
-      toast('Postulación enviada', 'success');
-    };
-    actions.appendChild(reqBtn);
+    const myApp = incident.applications.find(a => a.providerId === myId());
+    const applied = !!myApp;
+
+    if (applied) {
+      const badge = document.createElement('div');
+      badge.className = 'status-badge status-en-proceso';
+      badge.textContent = `Postulación enviada · ${myApp.amount != null ? myApp.amount.toFixed(2) + ' €' : 'Sin importe'}`;
+      actions.appendChild(badge);
+    } else {
+      // Formulario para postularse con presupuesto
+      const form = document.createElement('div');
+      form.className = 'apply-form';
+
+      const lbl = document.createElement('label'); lbl.textContent = 'Tu presupuesto:';
+      const amountInput = document.createElement('input');
+      amountInput.type = 'number'; amountInput.step = '0.01'; amountInput.min = '0';
+      amountInput.placeholder = 'Importe (€)';
+
+      const noteInput = document.createElement('input');
+      noteInput.type = 'text'; noteInput.placeholder = 'Nota opcional'; noteInput.maxLength = 200;
+      noteInput.style.cssText = 'flex:2;min-width:120px;max-width:220px;padding:7px 10px;font-size:13px';
+
+      const applyBtn = button('Postularme', 'btn btn-primary btn-sm');
+      applyBtn.onclick = () => {
+        const amount = amountInput.value ? parseFloat(amountInput.value) : null;
+        if (amount === null || isNaN(amount) || amount < 0) {
+          return toast('Introduce un presupuesto válido', 'error');
+        }
+        incident.applicants.push(myId());
+        incident.applications.push({
+          providerId: myId(),
+          amount,
+          note: noteInput.value.trim(),
+          appliedAt: Date.now()
+        });
+        incident.messages.push({
+          from: myId(),
+          text: `Me postulo para esta incidencia. Presupuesto: ${amount.toFixed(2)} €${noteInput.value.trim() ? ' — ' + noteInput.value.trim() : ''}`,
+          at: Date.now()
+        });
+        incident.updatedAt = Date.now();
+        saveState();
+        // Notificar al admin
+        const adminUser = state.users.find(u => u.role === 'admin');
+        if (adminUser) {
+          addNotification(
+            adminUser.id,
+            `${userName(myId())} se postuló para ${incident.id} (${incident.title}) — Presupuesto: ${amount.toFixed(2)} €`,
+            'info', incident.id
+          );
+        }
+        renderProviderLists();
+        toast('Postulación enviada con éxito', 'success');
+      };
+
+      form.append(lbl, amountInput, noteInput, applyBtn);
+      actions.appendChild(form);
+    }
   }
 
   if (mode === 'provider-mine') {
     const progBox = document.createElement('div');
     progBox.className = 'progress-control';
-    const label = document.createElement('label'); label.textContent = 'Avance: ';
+    const label = document.createElement('label'); label.textContent = 'Avance:';
     const slider = document.createElement('input');
     slider.type = 'range'; slider.min = '0'; slider.max = '100'; slider.step = '5';
     slider.value = String(incident.progress || 0);
     slider.setAttribute('aria-label', 'Porcentaje de avance');
     const out = document.createElement('output');
-    out.textContent = ` ${slider.value}%`;
-    slider.addEventListener('input', () => out.textContent = ` ${slider.value}%`);
+    out.textContent = `${slider.value}%`;
+    slider.addEventListener('input', () => out.textContent = `${slider.value}%`);
     slider.addEventListener('change', () => {
       incident.progress = parseInt(slider.value, 10);
       if (incident.progress === 100 && incident.status !== 'Finalizada') {
@@ -979,13 +1367,18 @@ function buildActions(node, incident, mode) {
     });
     progBox.append(label, slider, out);
 
-    const finishBtn = button('Finalizar', 'btn btn-outline btn-sm');
+    const finishBtn = button('Finalizar', 'btn btn-success btn-sm');
     finishBtn.disabled = incident.status === 'Finalizada';
     finishBtn.onclick = () => {
       incident.status = 'Finalizada';
       incident.progress = 100;
       incident.updatedAt = Date.now();
       saveState();
+      // Notificar al admin
+      const adminUser = state.users.find(u => u.role === 'admin');
+      if (adminUser) {
+        addNotification(adminUser.id, `${incident.id} marcada como Finalizada por ${userName(myId())}`, 'success', incident.id);
+      }
       renderProviderLists();
       toast('Marcada como finalizada', 'success');
     };
@@ -995,6 +1388,10 @@ function buildActions(node, incident, mode) {
       incident.status = 'Requiere Revisión';
       incident.updatedAt = Date.now();
       saveState();
+      const adminUser = state.users.find(u => u.role === 'admin');
+      if (adminUser) {
+        addNotification(adminUser.id, `${incident.id} requiere revisión (${incident.title})`, 'info', incident.id);
+      }
       renderProviderLists();
       toast('Marcada para revisión', 'info');
     };
@@ -1021,7 +1418,7 @@ function openEditIncidentDialog(incident) {
 }
 
 /* ========================================================================
- * DOCUMENTOS (presupuestos / facturas)
+ * DOCUMENTOS
  * ====================================================================== */
 function buildDocsSection(node, incident, mode) {
   const section = $('.docs-section', node);
@@ -1105,6 +1502,11 @@ function renderDocList(parent, incident, key, title, canUpload, canReview) {
         saveState();
         amount.value = '';
         fileInput.value = '';
+        // Notificar admin
+        const adminUser = state.users.find(u => u.role === 'admin');
+        if (adminUser) {
+          addNotification(adminUser.id, `Nuevo documento en ${incident.id}: ${file.name}`, 'info', incident.id);
+        }
         renderProviderLists();
         toast(`${title.slice(0, -1)} subida`, 'success');
       } catch (err) {
@@ -1175,6 +1577,15 @@ function updateDocStatus(incident, doc, newStatus) {
   doc.reviewedAt = Date.now();
   incident.updatedAt = Date.now();
   saveState();
+  // Notificar al proveedor
+  if (doc.providerId) {
+    addNotification(
+      doc.providerId,
+      `Tu documento "${doc.filename}" en ${incident.id} fue ${DOC_STATUSES[newStatus].toLowerCase()}`,
+      newStatus === 'aprobado' ? 'success' : 'info',
+      incident.id
+    );
+  }
   if (isAdmin()) renderAdminIncidents();
   else renderProviderLists();
   toast(`Documento ${DOC_STATUSES[newStatus].toLowerCase()}`, 'success');
@@ -1205,6 +1616,8 @@ function buildMessages(node, incident) {
       item.append(who, txt, time);
       messagesEl.appendChild(item);
     });
+    // Scroll al final
+    messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
   const input = $('.message-input', node);
@@ -1216,6 +1629,23 @@ function buildMessages(node, incident) {
     incident.messages.push({ from: myId(), text, at: Date.now() });
     incident.updatedAt = Date.now();
     saveState();
+
+    // Notificar a la otra parte
+    let recipientId = null;
+    if (isAdmin() && incident.assignedProviderId) {
+      recipientId = incident.assignedProviderId;
+    } else if (!isAdmin()) {
+      const adminUser = state.users.find(u => u.role === 'admin');
+      if (adminUser) recipientId = adminUser.id;
+    }
+    if (recipientId) {
+      addNotification(
+        recipientId,
+        `Nuevo mensaje en ${incident.id}: "${text.length > 60 ? text.slice(0, 60) + '…' : text}"`,
+        'info', incident.id
+      );
+    }
+
     input.value = '';
     if (isAdmin()) renderAdminIncidents();
     else renderProviderLists();
@@ -1226,8 +1656,7 @@ function buildMessages(node, incident) {
   });
 }
 
-function button(label, className) {
-  if (!className) className = 'btn btn-outline';
+function button(label, className = 'btn btn-outline') {
   const b = document.createElement('button');
   b.type = 'button';
   b.className = className;
@@ -1259,6 +1688,32 @@ function bindEvents() {
   const cancelEdit = $('#cancelEditUserBtn');
   if (cancelEdit) cancelEdit.addEventListener('click', () => { resetUserForm(); toast('Edición cancelada', 'info'); });
 
+  // Notificaciones: toggle panel
+  const notifBtn = $('#notifBtn');
+  if (notifBtn) {
+    notifBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const panel = $('#notifPanel');
+      const isOpen = !panel.classList.contains('hidden');
+      if (isOpen) {
+        panel.classList.add('hidden');
+      } else {
+        renderNotifPanel();
+        panel.classList.remove('hidden');
+        // Marcar como leídas al abrir
+        setTimeout(() => {
+          myNotifications().filter(n => !n.read).forEach(n => { n.read = true; });
+          saveState();
+          renderNotifBadge();
+        }, 1500);
+      }
+    });
+  }
+  // Cerrar panel al hacer click fuera
+  document.addEventListener('click', () => {
+    $('#notifPanel')?.classList.add('hidden');
+  });
+
   const resetBtn = $('#resetBtn');
   if (resetBtn) {
     resetBtn.addEventListener('click', () => {
@@ -1266,8 +1721,9 @@ function bindEvents() {
       localStorage.removeItem(STORAGE_KEY);
       sessionStorage.removeItem(SESSION_KEY);
       state.currentUser = null;
-      state.users = structuredClone(DEFAULT_USERS);
-      state.incidents = structuredClone(DEFAULT_INCIDENTS);
+      state.users         = structuredClone(DEFAULT_USERS);
+      state.incidents     = structuredClone(DEFAULT_INCIDENTS);
+      state.notifications = [];
       saveState();
       render();
       toast('Datos restablecidos', 'success');
