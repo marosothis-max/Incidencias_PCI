@@ -9,8 +9,8 @@
 const STORAGE_KEY = 'urban_psi_state_v3';
 const SESSION_KEY = 'urban_psi_session_v3';
 
-const CRITICALITIES = ['Baja', 'Normal', 'Alta', 'Urgente'];
-const STATUSES      = ['Pendiente', 'En Proceso', 'Finalizada', 'Requiere Revisión'];
+const CRITICALITIES  = ['Baja', 'Normal', 'Alta', 'Urgente'];
+const STATUSES       = ['Pendiente', 'En Proceso', 'Finalizada', 'Requiere Revisión'];
 const PROVIDER_TYPES = ['autonomo', 'empresa'];
 
 const ROLE_LABELS = { admin: 'Administrador', provider: 'Proveedor' };
@@ -28,7 +28,7 @@ const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const NOW = Date.now();
 
 const DEFAULT_USERS = [
-  { id: 'u-admin', username: 'admin', password: '1234', role: 'admin',
+  { id: 'u-admin', username: 'admin', password: '3016', role: 'admin',
     name: 'Gestor Urban PSI', type: null, email: 'admin@urbanpsi.local',
     phone: '', taxId: '', createdAt: NOW },
   { id: 'u-p1', username: 'fontaneria_lopez', password: '1234', role: 'provider',
@@ -103,12 +103,12 @@ function loadState() {
       state.incidents     = Array.isArray(d.incidents)     ? d.incidents     : structuredClone(DEFAULT_INCIDENTS);
       state.notifications = Array.isArray(d.notifications) ? d.notifications : [];
       state.incidents.forEach(i => {
-        if (!Array.isArray(i.applicants))    i.applicants    = [];
-        if (!Array.isArray(i.applications))  i.applications  = [];
-        if (!Array.isArray(i.budgets))       i.budgets       = [];
-        if (!Array.isArray(i.invoices))      i.invoices      = [];
-        if (typeof i.progress !== 'number')  i.progress      = 0;
-        if (!i.criticality && i.priority)    i.criticality   = i.priority;
+        if (!Array.isArray(i.applicants))   i.applicants   = [];
+        if (!Array.isArray(i.applications)) i.applications = [];
+        if (!Array.isArray(i.budgets))      i.budgets      = [];
+        if (!Array.isArray(i.invoices))     i.invoices     = [];
+        if (typeof i.progress !== 'number') i.progress     = 0;
+        if (!i.criticality && i.priority)   i.criticality  = i.priority;
       });
     } else {
       state.users         = structuredClone(DEFAULT_USERS);
@@ -178,7 +178,7 @@ function formatDate(ts) {
 
 function relativeTime(ts) {
   if (!ts) return '';
-  const diff = Date.now() - ts;
+  const diff  = Date.now() - ts;
   const mins  = Math.floor(diff / 60_000);
   const hours = Math.floor(diff / 3_600_000);
   const days  = Math.floor(diff / 86_400_000);
@@ -190,8 +190,7 @@ function relativeTime(ts) {
 }
 
 function ageDays(ts) {
-  if (!ts) return 0;
-  return Math.floor((Date.now() - ts) / 86_400_000);
+  return ts ? Math.floor((Date.now() - ts) / 86_400_000) : 0;
 }
 
 function slug(s) {
@@ -201,7 +200,7 @@ function slug(s) {
 }
 
 function fmtBytes(n) {
-  if (n < 1024) return `${n} B`;
+  if (n < 1024)        return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / (1024 * 1024)).toFixed(2)} MB`;
 }
@@ -227,7 +226,7 @@ function toast(message, type = 'info') {
     document.body.appendChild(el);
   }
   el.textContent = message;
-  el.className = `toast toast-${type} show`;
+  el.className   = `toast toast-${type} show`;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 3400);
 }
@@ -237,16 +236,9 @@ function toast(message, type = 'info') {
  * ====================================================================== */
 function addNotification(toUserId, message, type = 'info', incidentId = null) {
   state.notifications.unshift({
-    id: uid('notif'),
-    toUserId,
-    message,
-    type,
-    incidentId,
-    read: false,
-    at: Date.now()
+    id: uid('notif'), toUserId, message, type, incidentId, read: false, at: Date.now()
   });
-  // Limitar a 50 notificaciones
-  if (state.notifications.length > 50) state.notifications.length = 50;
+  if (state.notifications.length > 60) state.notifications.length = 60;
   saveState();
   renderNotifBadge();
 }
@@ -258,98 +250,87 @@ function myNotifications() {
 function renderNotifBadge() {
   const badge = $('#notifBadge');
   if (!badge) return;
-  const count = myNotifications().filter(n => !n.read).length;
-  if (count > 0) {
-    badge.textContent = count > 9 ? '9+' : String(count);
+  const unread = myNotifications().filter(n => !n.read).length;
+  if (unread > 0) {
+    badge.textContent = unread > 9 ? '9+' : String(unread);
     badge.classList.remove('hidden');
   } else {
     badge.classList.add('hidden');
   }
   // Actualizar pill de la pestaña
   const total = myNotifications().length;
-  const unread = myNotifications().filter(n => !n.read).length;
-  const adminPill    = $('#adminNotifCount');
-  const providerPill = $('#providerNotifCount');
-  if (adminPill)    adminPill.textContent    = unread > 0 ? String(unread) : String(total);
-  if (providerPill) providerPill.textContent = unread > 0 ? String(unread) : String(total);
+  const ap = $('#adminNotifCount');
+  const pp = $('#providerNotifCount');
+  if (ap) ap.textContent = unread > 0 ? String(unread) : String(total);
+  if (pp) pp.textContent = unread > 0 ? String(unread) : String(total);
 }
 
 function renderNotifPanel() {
   const panel = $('#notifPanel');
   if (!panel) return;
   panel.innerHTML = '';
-
   const notifs = myNotifications();
 
   const header = document.createElement('div');
   header.className = 'notif-header';
-  header.innerHTML = `<span>Notificaciones</span>`;
+  header.innerHTML = '<span>Notificaciones</span>';
   if (notifs.some(n => !n.read)) {
-    const clearBtn = document.createElement('button');
-    clearBtn.className = 'notif-clear-btn';
-    clearBtn.textContent = 'Marcar todo como leído';
-    clearBtn.onclick = (e) => {
+    const btn = document.createElement('button');
+    btn.className   = 'notif-clear-btn';
+    btn.textContent = 'Marcar todo como leído';
+    btn.onclick = e => {
       e.stopPropagation();
       notifs.forEach(n => { n.read = true; });
-      saveState();
-      renderNotifBadge();
-      renderNotifPanel();
+      saveState(); renderNotifBadge(); renderNotifPanel();
     };
-    header.appendChild(clearBtn);
+    header.appendChild(btn);
   }
   panel.appendChild(header);
 
   if (!notifs.length) {
-    const empty = document.createElement('div');
-    empty.className = 'notif-empty';
-    empty.textContent = 'No tienes notificaciones.';
-    panel.appendChild(empty);
+    const em = document.createElement('div');
+    em.className = 'notif-empty';
+    em.textContent = 'No tienes notificaciones.';
+    panel.appendChild(em);
     return;
   }
 
   notifs.forEach(n => {
     const item = document.createElement('div');
     item.className = `notif-item ${n.read ? '' : 'unread'}`;
-    item.onclick = () => {
-      n.read = true;
-      saveState();
-      renderNotifBadge();
-      renderNotifPanel();
-      // Navegar a la incidencia si existe
-      if (n.incidentId) {
-        if (isAdmin()) {
-          state.filters.admin.q = n.incidentId;
-          switchAdminTab('incidents');
-          if ($('#adminFilterQ')) $('#adminFilterQ').value = n.incidentId;
-          renderAdminIncidents();
-        } else {
-          state.filters.provider.q = n.incidentId;
-          if ($('#providerFilterQ')) $('#providerFilterQ').value = n.incidentId;
-          switchProviderTab('mine');
-          renderProviderLists();
-        }
-        panel.classList.add('hidden');
-      }
+    item.onclick   = () => {
+      n.read = true; saveState(); renderNotifBadge(); renderNotifPanel();
+      if (n.incidentId) navigateToIncident(n.incidentId);
+      panel.classList.add('hidden');
     };
-
-    const dot = document.createElement('div');
-    dot.className = `notif-dot ${n.read ? 'read' : ''}`;
-
-    const text = document.createElement('div');
-    text.className = 'notif-text';
+    const dot  = document.createElement('div');
+    dot.className  = `notif-dot ${n.read ? 'read' : ''}`;
+    const text = document.createElement('div'); text.className = 'notif-text';
     text.textContent = n.message;
-    const time = document.createElement('div');
-    time.className = 'notif-time';
+    const time = document.createElement('div'); time.className = 'notif-time';
     time.textContent = relativeTime(n.at);
     text.appendChild(time);
-
     item.append(dot, text);
     panel.appendChild(item);
   });
 }
 
+function navigateToIncident(incidentId) {
+  if (isAdmin()) {
+    state.filters.admin.q = incidentId;
+    switchAdminTab('incidents');
+    const q = $('#adminFilterQ'); if (q) q.value = incidentId;
+    renderAdminIncidents();
+  } else {
+    state.filters.provider.q = incidentId;
+    const q = $('#providerFilterQ'); if (q) q.value = incidentId;
+    switchProviderTab('mine');
+    renderProviderLists();
+  }
+}
+
 /* ========================================================================
- * PÁGINA COMPLETA DE NOTIFICACIONES
+ * PÁGINA COMPLETA DE NOTIFICACIONES (tab)
  * ====================================================================== */
 function renderNotificationsTab(containerId) {
   const container = $('#' + containerId);
@@ -361,24 +342,21 @@ function renderNotificationsTab(containerId) {
   const wrap = document.createElement('div');
   wrap.className = 'notif-page';
 
-  // Cabecera
   const header = document.createElement('div');
   header.className = 'notif-page-header';
   const title = document.createElement('h3');
-  title.textContent = `Notificaciones${unread > 0 ? ` (${unread} sin leer)` : ''}`;
+  title.textContent = `Notificaciones${unread > 0 ? ` · ${unread} sin leer` : ''}`;
   header.appendChild(title);
 
   if (unread > 0) {
-    const readAllBtn = document.createElement('button');
-    readAllBtn.className = 'btn btn-outline btn-sm';
-    readAllBtn.textContent = 'Marcar todo como leído';
-    readAllBtn.onclick = () => {
+    const btn = document.createElement('button');
+    btn.className   = 'btn btn-outline btn-sm';
+    btn.textContent = 'Marcar todo como leído';
+    btn.onclick = () => {
       notifs.forEach(n => { n.read = true; });
-      saveState();
-      renderNotifBadge();
-      renderNotificationsTab(containerId);
+      saveState(); renderNotifBadge(); renderNotificationsTab(containerId);
     };
-    header.appendChild(readAllBtn);
+    header.appendChild(btn);
   }
   wrap.appendChild(header);
 
@@ -394,55 +372,27 @@ function renderNotificationsTab(containerId) {
   notifs.forEach(n => {
     const card = document.createElement('div');
     card.className = `notif-card ${n.read ? '' : 'unread-card'}`;
-
     card.onclick = () => {
-      n.read = true;
-      saveState();
-      renderNotifBadge();
-      // Navegar a la incidencia
-      if (n.incidentId) {
-        if (isAdmin()) {
-          state.filters.admin.q = n.incidentId;
-          switchAdminTab('incidents');
-          if ($('#adminFilterQ')) $('#adminFilterQ').value = n.incidentId;
-          renderAdminIncidents();
-        } else {
-          state.filters.provider.q = n.incidentId;
-          if ($('#providerFilterQ')) $('#providerFilterQ').value = n.incidentId;
-          switchProviderTab('mine');
-          renderProviderLists();
-        }
-      } else {
-        renderNotificationsTab(containerId);
-      }
+      n.read = true; saveState(); renderNotifBadge();
+      if (n.incidentId) { navigateToIncident(n.incidentId); }
+      else { renderNotificationsTab(containerId); }
     };
 
-    const dot = document.createElement('div');
+    const dot  = document.createElement('div');
     dot.className = `notif-card-dot ${n.read ? 'read' : ''}`;
 
-    const body = document.createElement('div');
-    body.className = 'notif-card-body';
-
-    const msg = document.createElement('div');
-    msg.className = 'notif-card-msg';
+    const body = document.createElement('div'); body.className = 'notif-card-body';
+    const msg  = document.createElement('div'); msg.className  = 'notif-card-msg';
     msg.textContent = n.message;
-
-    const meta = document.createElement('div');
-    meta.className = 'notif-card-meta';
-
-    const time = document.createElement('span');
-    time.className = 'notif-card-time';
-    time.textContent = relativeTime(n.at);
-    time.title = formatDate(n.at);
+    const meta = document.createElement('div'); meta.className = 'notif-card-meta';
+    const time = document.createElement('span'); time.className = 'notif-card-time';
+    time.textContent = relativeTime(n.at); time.title = formatDate(n.at);
     meta.appendChild(time);
-
     if (n.incidentId) {
-      const inc = document.createElement('span');
-      inc.className = 'notif-card-inc';
+      const inc = document.createElement('span'); inc.className = 'notif-card-inc';
       inc.textContent = n.incidentId;
       meta.appendChild(inc);
     }
-
     body.append(msg, meta);
     card.append(dot, body);
     list.appendChild(card);
@@ -451,7 +401,7 @@ function renderNotificationsTab(containerId) {
   wrap.appendChild(list);
   container.appendChild(wrap);
 
-  // Marcar todas como leídas tras 2s de visualización
+  // Auto-leer tras 2 s
   setTimeout(() => {
     let changed = false;
     notifs.forEach(n => { if (!n.read) { n.read = true; changed = true; } });
@@ -504,7 +454,7 @@ function validateUserForm(data, ignoreId = null) {
 
 function submitUserForm(ev) {
   ev?.preventDefault();
-  const id = state.ui.editingUserId;
+  const id   = state.ui.editingUserId;
   const data = {
     name:     $('#userName').value.trim(),
     type:     $('#userType').value,
@@ -523,40 +473,32 @@ function submitUserForm(ev) {
     Object.assign(u, data);
     toast('Usuario actualizado', 'success');
   } else {
-    state.users.push({
-      id: uid('u'),
-      role: 'provider',
-      createdAt: Date.now(),
-      ...data
-    });
+    state.users.push({ id: uid('u'), role: 'provider', createdAt: Date.now(), ...data });
     toast('Usuario creado', 'success');
   }
-  saveState();
-  resetUserForm();
-  renderUsers();
+  saveState(); resetUserForm(); renderUsers();
 }
 
 function resetUserForm() {
   state.ui.editingUserId = null;
-  ['#userName', '#userUsername', '#userPassword', '#userEmail', '#userPhone', '#userTaxId']
+  ['#userName','#userUsername','#userPassword','#userEmail','#userPhone','#userTaxId']
     .forEach(s => { const el = $(s); if (el) el.value = ''; });
-  if ($('#userType')) $('#userType').value = 'autonomo';
-  if ($('#userFormTitle')) $('#userFormTitle').textContent = 'Nuevo proveedor';
+  if ($('#userType'))          $('#userType').value = 'autonomo';
+  if ($('#userFormTitle'))     $('#userFormTitle').textContent = 'Nuevo proveedor';
   if ($('#cancelEditUserBtn')) $('#cancelEditUserBtn').classList.add('hidden');
-  if ($('#submitUserBtn')) $('#submitUserBtn').textContent = 'Crear proveedor';
+  if ($('#submitUserBtn'))     $('#submitUserBtn').textContent = 'Crear proveedor';
 }
 
 function editUser(id) {
-  const u = findUser(id);
-  if (!u) return;
-  state.ui.editingUserId = id;
-  $('#userName').value     = u.name || '';
-  $('#userType').value     = u.type || 'autonomo';
-  $('#userUsername').value = u.username || '';
-  $('#userPassword').value = u.password || '';
-  $('#userEmail').value    = u.email || '';
-  $('#userPhone').value    = u.phone || '';
-  $('#userTaxId').value    = u.taxId || '';
+  const u = findUser(id); if (!u) return;
+  state.ui.editingUserId   = id;
+  $('#userName').value      = u.name     || '';
+  $('#userType').value      = u.type     || 'autonomo';
+  $('#userUsername').value  = u.username || '';
+  $('#userPassword').value  = u.password || '';
+  $('#userEmail').value     = u.email    || '';
+  $('#userPhone').value     = u.phone    || '';
+  $('#userTaxId').value     = u.taxId    || '';
   $('#userFormTitle').textContent = `Editar: ${u.name}`;
   $('#cancelEditUserBtn').classList.remove('hidden');
   $('#submitUserBtn').textContent = 'Guardar cambios';
@@ -565,22 +507,15 @@ function editUser(id) {
 }
 
 function deleteUser(id) {
-  const u = findUser(id);
-  if (!u) return;
+  const u = findUser(id); if (!u) return;
   const assigned = state.incidents.filter(i => i.assignedProviderId === id);
   if (assigned.length) {
     if (!confirm(`${u.name} está asignado a ${assigned.length} incidencia(s). ¿Desasignar y eliminar?`)) return;
-    assigned.forEach(i => {
-      i.assignedProviderId = null;
-      i.status = 'Pendiente';
-      i.updatedAt = Date.now();
-    });
+    assigned.forEach(i => { i.assignedProviderId = null; i.status = 'Pendiente'; i.updatedAt = Date.now(); });
   } else if (!confirm(`¿Eliminar a ${u.name}?`)) return;
-
   state.users = state.users.filter(x => x.id !== id);
   if (state.ui.editingUserId === id) resetUserForm();
-  saveState();
-  renderUsers();
+  saveState(); renderUsers();
   toast('Usuario eliminado', 'success');
 }
 
@@ -589,7 +524,7 @@ function applyAdminFilters(list) {
   const f = state.filters.admin;
   const q = f.q.toLowerCase();
   return list.filter(i => {
-    if (q && !(i.title + ' ' + i.description + ' ' + i.address + ' ' + i.id).toLowerCase().includes(q)) return false;
+    if (q && !(i.title+' '+i.description+' '+i.address+' '+i.id).toLowerCase().includes(q)) return false;
     if (f.status      && i.status      !== f.status)      return false;
     if (f.criticality && i.criticality !== f.criticality) return false;
     if (f.assigned === 'unassigned' && i.assignedProviderId !== null) return false;
@@ -602,7 +537,7 @@ function applyProviderFilters(list) {
   const f = state.filters.provider;
   const q = f.q.toLowerCase();
   return list.filter(i => {
-    if (q && !(i.title + ' ' + i.description + ' ' + i.address + ' ' + i.id).toLowerCase().includes(q)) return false;
+    if (q && !(i.title+' '+i.description+' '+i.address+' '+i.id).toLowerCase().includes(q)) return false;
     if (f.criticality && i.criticality !== f.criticality) return false;
     return true;
   });
@@ -642,10 +577,9 @@ function switchAdminTab(tab) {
     b.classList.toggle('active', active);
     b.setAttribute('aria-selected', String(active));
   });
-  ['dashboard', 'incidents', 'create', 'users', 'notif'].forEach(t => {
-    $(`#admin${t[0].toUpperCase()}${t.slice(1)}Tab`)?.classList.toggle('hidden', t !== tab);
+  ['dashboard','incidents','create','users','notif'].forEach(t => {
+    $(`#admin${t[0].toUpperCase()+t.slice(1)}Tab`)?.classList.toggle('hidden', t !== tab);
   });
-
   if (tab === 'dashboard') renderAdminDashboard();
   if (tab === 'incidents') { renderAdminFilters(); renderAdminIncidents(); }
   if (tab === 'users')     renderUsers();
@@ -659,13 +593,12 @@ function switchProviderTab(tab) {
     b.classList.toggle('active', active);
     b.setAttribute('aria-selected', String(active));
   });
-  ['dashboard', 'available', 'mine', 'notif'].forEach(t => {
-    $(`#provider${t[0].toUpperCase()}${t.slice(1)}Tab`)?.classList.toggle('hidden', t !== tab);
+  ['dashboard','available','mine','notif'].forEach(t => {
+    $(`#provider${t[0].toUpperCase()+t.slice(1)}Tab`)?.classList.toggle('hidden', t !== tab);
   });
-
-  if (tab === 'dashboard')              renderProviderDashboard();
+  if (tab === 'dashboard')                   renderProviderDashboard();
   if (tab === 'available' || tab === 'mine') { renderProviderFilters(); renderProviderLists(); }
-  if (tab === 'notif')                  renderNotificationsTab('providerNotifTab');
+  if (tab === 'notif')                       renderNotificationsTab('providerNotifTab');
 }
 
 /* ---------- Crear incidencia ---------- */
@@ -679,34 +612,22 @@ function createIncident() {
   if (title.length > 120) return toast('Título demasiado largo', 'error');
   if (!CRITICALITIES.includes(criticality)) return toast('Criticidad inválida', 'error');
 
-  const now = Date.now();
+  const now    = Date.now();
   const newInc = {
-    id: nextIncidentId(),
-    title, address, description, criticality,
-    status: 'Pendiente',
-    assignedProviderId: null,
-    createdBy: myId(),
-    createdAt: now,
-    updatedAt: now,
-    progress: 0,
-    applicants: [],
-    applications: [],
-    messages: [],
-    budgets: [],
-    invoices: []
+    id: nextIncidentId(), title, address, description, criticality,
+    status: 'Pendiente', assignedProviderId: null,
+    createdBy: myId(), createdAt: now, updatedAt: now,
+    progress: 0, applicants: [], applications: [], messages: [], budgets: [], invoices: []
   };
   state.incidents.unshift(newInc);
 
   // Notificar a todos los proveedores
-  providers().forEach(p => {
-    addNotification(p.id,
-      `Nueva incidencia disponible: ${title} (${criticality})`,
-      'info', newInc.id
-    );
-  });
+  providers().forEach(p => addNotification(
+    p.id, `Nueva incidencia disponible: ${title} (${criticality})`, 'info', newInc.id
+  ));
 
   saveState();
-  ['#newTitle', '#newAddress', '#newDescription'].forEach(s => { $(s).value = ''; });
+  ['#newTitle','#newAddress','#newDescription'].forEach(s => { $(s).value = ''; });
   $('#newCriticality').value = 'Normal';
   switchAdminTab('incidents');
   toast('Incidencia creada', 'success');
@@ -715,12 +636,12 @@ function createIncident() {
 /* ========================================================================
  * DASHBOARDS
  * ====================================================================== */
-let adminCharts = {};
+let adminCharts   = {};
 let providerCharts = {};
 
-function destroyCharts(chartsObj) {
-  Object.values(chartsObj).forEach(c => { try { c.destroy(); } catch (_) {} });
-  Object.keys(chartsObj).forEach(k => delete chartsObj[k]);
+function destroyCharts(obj) {
+  Object.values(obj).forEach(c => { try { c.destroy(); } catch (_) {} });
+  Object.keys(obj).forEach(k => delete obj[k]);
 }
 
 function renderAdminDashboard() {
@@ -729,171 +650,137 @@ function renderAdminDashboard() {
   container.innerHTML = '';
 
   const all = state.incidents;
-  const byStatus = {};
-  STATUSES.forEach(s => byStatus[s] = 0);
-  const byCrit = {};
-  CRITICALITIES.forEach(c => byCrit[c] = 0);
-
+  const byStatus = {}; STATUSES.forEach(s => byStatus[s] = 0);
+  const byCrit   = {}; CRITICALITIES.forEach(c => byCrit[c] = 0);
   all.forEach(i => {
-    byStatus[i.status] = (byStatus[i.status] || 0) + 1;
-    byCrit[i.criticality] = (byCrit[i.criticality] || 0) + 1;
+    byStatus[i.status]       = (byStatus[i.status]       || 0) + 1;
+    byCrit[i.criticality]    = (byCrit[i.criticality]    || 0) + 1;
   });
 
-  const pending      = all.filter(i => i.status === 'Pendiente').length;
-  const inProgress   = all.filter(i => i.status === 'En Proceso').length;
-  const finished     = all.filter(i => i.status === 'Finalizada').length;
-  const needsReview  = all.filter(i => i.status === 'Requiere Revisión').length;
-  const unassigned   = all.filter(i => !i.assignedProviderId).length;
-  const urgentOpen   = all.filter(i => i.criticality === 'Urgente' && i.status !== 'Finalizada').length;
-  const avgAge       = all.length ? Math.round(all.reduce((s,i)=>s+ageDays(i.createdAt),0) / all.length) : 0;
+  const pending     = all.filter(i => i.status === 'Pendiente').length;
+  const inProgress  = all.filter(i => i.status === 'En Proceso').length;
+  const finished    = all.filter(i => i.status === 'Finalizada').length;
+  const needsReview = all.filter(i => i.status === 'Requiere Revisión').length;
+  const unassigned  = all.filter(i => !i.assignedProviderId).length;
+  const urgentOpen  = all.filter(i => i.criticality === 'Urgente' && i.status !== 'Finalizada').length;
+  const avgAge      = all.length ? Math.round(all.reduce((s,i)=>s+ageDays(i.createdAt),0)/all.length) : 0;
+  const pendingDocs = all.reduce((sum,i) =>
+    sum + i.budgets.filter(b=>b.status==='en_revision').length
+        + i.invoices.filter(v=>v.status==='en_revision').length, 0);
+  const pendingApps = all.reduce((sum,i) =>
+    sum + (i.assignedProviderId === null ? i.applications.length : 0), 0);
 
-  const pendingDocs = all.reduce((sum, i) => {
-    return sum +
-      i.budgets.filter(b => b.status === 'en_revision').length +
-      i.invoices.filter(v => v.status === 'en_revision').length;
-  }, 0);
-
-  // Postulaciones pendientes de aprobar
-  const pendingApps = all.reduce((sum, i) => {
-    return sum + (i.assignedProviderId === null ? i.applications.length : 0);
-  }, 0);
-
+  // KPIs
   const kpis = document.createElement('div');
   kpis.className = 'kpi-grid';
   kpis.append(
-    kpiCard('Total',              all.length,            'all'),
-    kpiCard('Pendientes',         pending,               'pending'),
-    kpiCard('En proceso',         inProgress,            'progress'),
-    kpiCard('Finalizadas',        finished,              'done'),
-    kpiCard('Requieren revisión', needsReview,           'review'),
-    kpiCard('Sin asignar',        unassigned,            'unassigned'),
-    kpiCard('Urgentes abiertas',  urgentOpen,            'urgent'),
-    kpiCard('Docs por revisar',   pendingDocs,           'docs'),
-    kpiCard('Postulaciones',      pendingApps,           'providers'),
-    kpiCard('Antigüedad media',   `${avgAge} d`,         'age'),
-    kpiCard('Proveedores',        providers().length,    'providers')
+    kpiCard('Total',              all.length,         'all'),
+    kpiCard('Pendientes',         pending,            'pending'),
+    kpiCard('En proceso',         inProgress,         'progress'),
+    kpiCard('Finalizadas',        finished,           'done'),
+    kpiCard('Req. revisión',      needsReview,        'review'),
+    kpiCard('Sin asignar',        unassigned,         'unassigned'),
+    kpiCard('Urgentes abiertas',  urgentOpen,         'urgent'),
+    kpiCard('Docs por revisar',   pendingDocs,        'docs'),
+    kpiCard('Postulaciones',      pendingApps,        'providers'),
+    kpiCard('Antigüedad media',   `${avgAge} d`,      'age'),
+    kpiCard('Proveedores',        providers().length, 'providers')
   );
   container.appendChild(kpis);
 
-  // Charts Chart.js
+  // Charts (Chart.js)
   const charts = document.createElement('div');
   charts.className = 'dash-charts';
 
-  // Gráfico donut — por estado
-  const sec1 = document.createElement('section');
-  sec1.className = 'dash-section';
-  const h1 = document.createElement('h3'); h1.textContent = 'Por estado';
-  const wrap1 = document.createElement('div'); wrap1.className = 'chart-wrap';
-  const canvas1 = document.createElement('canvas'); canvas1.id = 'chartStatus';
-  wrap1.appendChild(canvas1);
-  sec1.append(h1, wrap1);
+  const sec1 = document.createElement('section'); sec1.className = 'dash-section';
+  const h1   = document.createElement('h3');      h1.textContent = 'Por estado';
+  const w1   = document.createElement('div');     w1.className   = 'chart-wrap';
+  const c1   = document.createElement('canvas');  c1.id = 'chartStatus';
+  w1.appendChild(c1); sec1.append(h1, w1);
 
-  // Gráfico donut — por criticidad
-  const sec2 = document.createElement('section');
-  sec2.className = 'dash-section';
-  const h2 = document.createElement('h3'); h2.textContent = 'Por criticidad';
-  const wrap2 = document.createElement('div'); wrap2.className = 'chart-wrap';
-  const canvas2 = document.createElement('canvas'); canvas2.id = 'chartCrit';
-  wrap2.appendChild(canvas2);
-  sec2.append(h2, wrap2);
+  const sec2 = document.createElement('section'); sec2.className = 'dash-section';
+  const h2   = document.createElement('h3');      h2.textContent = 'Por criticidad';
+  const w2   = document.createElement('div');     w2.className   = 'chart-wrap';
+  const c2   = document.createElement('canvas');  c2.id = 'chartCrit';
+  w2.appendChild(c2); sec2.append(h2, w2);
 
   charts.append(sec1, sec2);
   container.appendChild(charts);
 
-  // Renderizar charts después de insertar en DOM
   requestAnimationFrame(() => {
-    const chartDefaults = {
-      plugins: {
-        legend: { position: 'bottom', labels: { font: { family: 'Inter', size: 12 }, padding: 12 } }
-      },
-      animation: { duration: 700, easing: 'easeOutQuart' }
-    };
+    const legendOpts = { position: 'bottom', labels: { font: { family: 'Inter', size: 12 }, padding: 14, usePointStyle: true } };
+    const animOpts   = { duration: 700, easing: 'easeOutQuart' };
 
-    adminCharts.status = new Chart(canvas1, {
+    adminCharts.status = new Chart(c1, {
       type: 'doughnut',
       data: {
         labels: STATUSES,
-        datasets: [{
-          data: STATUSES.map(s => byStatus[s]),
-          backgroundColor: ['#94a3b8', '#3b82f6', '#22c55e', '#f59e0b'],
-          borderWidth: 2,
-          borderColor: '#fff',
-          hoverOffset: 8
+        datasets: [{ data: STATUSES.map(s => byStatus[s]),
+          backgroundColor: ['#94a3b8','#3b82f6','#22c55e','#f59e0b'],
+          borderWidth: 2, borderColor: getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#fff',
+          hoverOffset: 10
         }]
       },
-      options: { ...chartDefaults, cutout: '62%' }
+      options: { plugins: { legend: legendOpts }, animation: animOpts, cutout: '65%' }
     });
 
-    adminCharts.crit = new Chart(canvas2, {
+    adminCharts.crit = new Chart(c2, {
       type: 'doughnut',
       data: {
         labels: CRITICALITIES,
-        datasets: [{
-          data: CRITICALITIES.map(c => byCrit[c]),
-          backgroundColor: ['#7fb77e', '#3b82f6', '#f59e0b', '#ef4444'],
-          borderWidth: 2,
-          borderColor: '#fff',
-          hoverOffset: 8
+        datasets: [{ data: CRITICALITIES.map(c => byCrit[c]),
+          backgroundColor: ['#7fb77e','#3b82f6','#f59e0b','#ef4444'],
+          borderWidth: 2, borderColor: getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#fff',
+          hoverOffset: 10
         }]
       },
-      options: { ...chartDefaults, cutout: '62%' }
+      options: { plugins: { legend: legendOpts }, animation: animOpts, cutout: '65%' }
     });
   });
 
-  // Lista de incidencias prioritarias
+  // Watch list
   const watchList = [...all]
     .filter(i => i.status !== 'Finalizada')
     .sort((a, b) => {
-      const ca = critRank(a.criticality), cb = critRank(b.criticality);
-      if (ca !== cb) return cb - ca;
-      return a.createdAt - b.createdAt;
+      const d = critRank(b.criticality) - critRank(a.criticality);
+      return d !== 0 ? d : a.createdAt - b.createdAt;
     })
     .slice(0, 6);
 
-  const watch = document.createElement('section');
-  watch.className = 'dash-section';
+  const watch = document.createElement('section'); watch.className = 'dash-section';
   const wh = document.createElement('h3'); wh.textContent = 'Requieren atención';
   watch.appendChild(wh);
-
   if (!watchList.length) {
     watch.appendChild(emptyState('No hay incidencias abiertas. ¡Todo en orden!'));
   } else {
-    const list = document.createElement('div');
-    list.className = 'dash-watch-list';
-    watchList.forEach(i => list.appendChild(watchRow(i)));
-    watch.appendChild(list);
+    const wl = document.createElement('div'); wl.className = 'dash-watch-list';
+    watchList.forEach(i => wl.appendChild(watchRow(i)));
+    watch.appendChild(wl);
   }
   container.appendChild(watch);
 
-  // Incidencias con postulaciones pendientes
+  // Postulaciones pendientes
   const withApps = all.filter(i => i.assignedProviderId === null && i.applications.length > 0);
   if (withApps.length) {
-    const appsSec = document.createElement('section');
-    appsSec.className = 'dash-section';
-    const ah = document.createElement('h3'); ah.textContent = `Postulaciones sin aprobar (${withApps.length})`;
-    appsSec.appendChild(ah);
-    const appsList = document.createElement('div');
-    appsList.className = 'dash-watch-list';
+    const sec = document.createElement('section'); sec.className = 'dash-section';
+    const ah = document.createElement('h3');
+    ah.textContent = `Postulaciones sin aprobar (${withApps.length})`;
+    sec.appendChild(ah);
+    const al = document.createElement('div'); al.className = 'dash-watch-list';
     withApps.forEach(i => {
-      const row = document.createElement('div');
-      row.className = 'watch-row';
-      const id  = document.createElement('span'); id.className = 'watch-id'; id.textContent = i.id;
+      const row = document.createElement('div'); row.className = 'watch-row';
+      const id  = document.createElement('span'); id.className = 'watch-id';   id.textContent = i.id;
       const tit = document.createElement('span'); tit.className = 'watch-title'; tit.textContent = i.title;
       const cnt = document.createElement('span'); cnt.className = 'status-badge status-pendiente';
-      cnt.textContent = `${i.applications.length} postulaci${i.applications.length === 1 ? 'ón' : 'ones'}`;
-      const go  = document.createElement('button'); go.type = 'button';
-      go.className = 'btn btn-primary btn-sm'; go.textContent = 'Revisar';
+      cnt.textContent = `${i.applications.length} postulaci${i.applications.length===1?'ón':'ones'}`;
+      const go  = button('Revisar','btn btn-primary btn-sm');
       go.onclick = () => {
-        state.filters.admin.q = i.id;
-        switchAdminTab('incidents');
-        if ($('#adminFilterQ')) $('#adminFilterQ').value = i.id;
-        renderAdminIncidents();
+        state.filters.admin.q = i.id; switchAdminTab('incidents');
+        const q = $('#adminFilterQ'); if (q) { q.value = i.id; } renderAdminIncidents();
       };
-      row.append(id, tit, cnt, go);
-      appsList.appendChild(row);
+      row.append(id, tit, cnt, go); al.appendChild(row);
     });
-    appsSec.appendChild(appsList);
-    container.appendChild(appsSec);
+    sec.appendChild(al); container.appendChild(sec);
   }
 }
 
@@ -909,18 +796,17 @@ function kpiCard(label, value, tone) {
 }
 
 function watchRow(i) {
-  const row = document.createElement('div');
-  row.className = 'watch-row';
-  const id   = document.createElement('span'); id.className = 'watch-id'; id.textContent = i.id;
+  const row  = document.createElement('div'); row.className = 'watch-row';
+  const id   = document.createElement('span'); id.className = 'watch-id';   id.textContent = i.id;
   const tit  = document.createElement('span'); tit.className = 'watch-title'; tit.textContent = i.title;
   const crit = document.createElement('span'); crit.className = `priority-badge crit-${slug(i.criticality)}`; crit.textContent = i.criticality;
   const st   = document.createElement('span'); st.className = `status-badge status-${slug(i.status)}`; st.textContent = i.status;
   const age  = document.createElement('span'); age.className = 'watch-age'; age.textContent = `${ageDays(i.createdAt)} d`;
-  const go   = document.createElement('button'); go.type = 'button'; go.className = 'btn btn-outline btn-sm'; go.textContent = 'Abrir';
+  const go   = button('Abrir','btn btn-outline btn-sm');
   go.onclick = () => {
     switchAdminTab('incidents');
     state.filters.admin.q = i.id;
-    $('#adminFilterQ').value = i.id;
+    const q = $('#adminFilterQ'); if (q) q.value = i.id;
     renderAdminIncidents();
   };
   row.append(id, tit, crit, st, age, go);
@@ -932,52 +818,43 @@ function renderProviderDashboard() {
   const container = $('#providerDashboardTab');
   container.innerHTML = '';
 
-  const mine = state.incidents.filter(i => i.assignedProviderId === myId());
+  const mine      = state.incidents.filter(i => i.assignedProviderId === myId());
   const available = state.incidents.filter(i => i.assignedProviderId === null);
   const mineActive = mine.filter(i => i.status !== 'Finalizada');
   const mineDone   = mine.filter(i => i.status === 'Finalizada');
-  const myApplied  = state.incidents.filter(i =>
-    i.applicants.includes(myId()) && i.assignedProviderId === null
-  );
+  const myApplied  = state.incidents.filter(i => i.applicants.includes(myId()) && i.assignedProviderId === null);
   const avgProgress = mineActive.length
-    ? Math.round(mineActive.reduce((s, i) => s + (i.progress || 0), 0) / mineActive.length)
-    : 0;
+    ? Math.round(mineActive.reduce((s,i) => s+(i.progress||0), 0) / mineActive.length) : 0;
 
   const myDocs = mine.flatMap(i => [
-    ...i.budgets.filter(b => b.providerId === myId()).map(d => Object.assign({}, d, { kind: 'budget' })),
-    ...i.invoices.filter(v => v.providerId === myId()).map(d => Object.assign({}, d, { kind: 'invoice' }))
+    ...i.budgets.filter(b=>b.providerId===myId()).map(d=>({...d,kind:'budget'})),
+    ...i.invoices.filter(v=>v.providerId===myId()).map(d=>({...d,kind:'invoice'}))
   ]);
-  const pendingDocs  = myDocs.filter(d => d.status === 'en_revision').length;
-  const approvedDocs = myDocs.filter(d => d.status === 'aprobado').length;
-  const rejectedDocs = myDocs.filter(d => d.status === 'rechazado').length;
 
-  const kpis = document.createElement('div');
-  kpis.className = 'kpi-grid';
+  const kpis = document.createElement('div'); kpis.className = 'kpi-grid';
   kpis.append(
-    kpiCard('Activas',        mineActive.length,   'progress'),
-    kpiCard('Finalizadas',    mineDone.length,     'done'),
-    kpiCard('Disponibles',    available.length,    'all'),
-    kpiCard('Mis solicitudes',myApplied.length,    'pending'),
-    kpiCard('Avance medio',   `${avgProgress}%`,   'age'),
-    kpiCard('Docs en revisión',pendingDocs,        'docs'),
-    kpiCard('Docs aprobados', approvedDocs,        'done'),
-    kpiCard('Docs rechazados',rejectedDocs,        'urgent')
+    kpiCard('Activas',          mineActive.length,                            'progress'),
+    kpiCard('Finalizadas',      mineDone.length,                              'done'),
+    kpiCard('Disponibles',      available.length,                             'all'),
+    kpiCard('Mis solicitudes',  myApplied.length,                            'pending'),
+    kpiCard('Avance medio',     `${avgProgress}%`,                            'age'),
+    kpiCard('Docs en revisión', myDocs.filter(d=>d.status==='en_revision').length, 'docs'),
+    kpiCard('Docs aprobados',   myDocs.filter(d=>d.status==='aprobado').length,    'done'),
+    kpiCard('Docs rechazados',  myDocs.filter(d=>d.status==='rechazado').length,   'urgent')
   );
   container.appendChild(kpis);
 
-  // Chart: progreso de mis trabajos activos
+  // Chart: progreso de trabajos activos
   if (mineActive.length > 0) {
-    const sec = document.createElement('section');
-    sec.className = 'dash-section';
-    const h = document.createElement('h3'); h.textContent = 'Progreso de mis trabajos';
-    const wrap = document.createElement('div'); wrap.className = 'chart-wrap';
-    const canvas = document.createElement('canvas'); canvas.id = 'chartProvProgress';
-    wrap.appendChild(canvas);
-    sec.append(h, wrap);
+    const sec = document.createElement('section'); sec.className = 'dash-section';
+    const h   = document.createElement('h3');     h.textContent = 'Progreso de mis trabajos';
+    const w   = document.createElement('div');    w.className   = 'chart-wrap';
+    const c   = document.createElement('canvas'); c.id = 'chartProvProgress';
+    w.appendChild(c); sec.append(h, w);
     container.appendChild(sec);
 
     requestAnimationFrame(() => {
-      providerCharts.progress = new Chart(canvas, {
+      providerCharts.progress = new Chart(c, {
         type: 'bar',
         data: {
           labels: mineActive.map(i => i.id),
@@ -986,19 +863,16 @@ function renderProviderDashboard() {
             data: mineActive.map(i => i.progress || 0),
             backgroundColor: mineActive.map(i => {
               const p = i.progress || 0;
-              if (p >= 80) return '#22c55e';
-              if (p >= 40) return '#3b82f6';
-              return '#f59e0b';
+              return p >= 80 ? '#22c55e' : p >= 40 ? '#3b82f6' : '#f59e0b';
             }),
-            borderRadius: 6,
-            borderSkipped: false
+            borderRadius: 6, borderSkipped: false
           }]
         },
         options: {
           indexAxis: 'y',
           plugins: { legend: { display: false } },
           scales: {
-            x: { min: 0, max: 100, ticks: { callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.05)' } },
+            x: { min: 0, max: 100, ticks: { callback: v => v+'%' }, grid: { color: 'rgba(0,0,0,.04)' } },
             y: { grid: { display: false } }
           },
           animation: { duration: 600, easing: 'easeOutQuart' }
@@ -1008,44 +882,36 @@ function renderProviderDashboard() {
   }
 
   // Mis trabajos en curso
-  const watch = document.createElement('section');
-  watch.className = 'dash-section';
+  const watch = document.createElement('section'); watch.className = 'dash-section';
   const wh = document.createElement('h3'); wh.textContent = 'Mis trabajos en curso';
   watch.appendChild(wh);
-
   if (!mineActive.length) {
     watch.appendChild(emptyState('No tienes trabajos en curso.'));
   } else {
-    const list = document.createElement('div');
-    list.className = 'dash-watch-list';
-    mineActive
-      .sort((a, b) => critRank(b.criticality) - critRank(a.criticality))
-      .forEach(i => list.appendChild(progressRow(i)));
-    watch.appendChild(list);
+    const wl = document.createElement('div'); wl.className = 'dash-watch-list';
+    [...mineActive].sort((a,b) => critRank(b.criticality)-critRank(a.criticality))
+      .forEach(i => wl.appendChild(progressRow(i)));
+    watch.appendChild(wl);
   }
   container.appendChild(watch);
 }
 
 function progressRow(i) {
-  const row = document.createElement('div');
-  row.className = 'watch-row';
-  const id   = document.createElement('span'); id.className = 'watch-id'; id.textContent = i.id;
+  const row  = document.createElement('div'); row.className = 'watch-row';
+  const id   = document.createElement('span'); id.className = 'watch-id';   id.textContent = i.id;
   const tit  = document.createElement('span'); tit.className = 'watch-title'; tit.textContent = i.title;
   const crit = document.createElement('span'); crit.className = `priority-badge crit-${slug(i.criticality)}`; crit.textContent = i.criticality;
-
   const prog = document.createElement('div'); prog.className = 'inline-progress';
   const ptr  = document.createElement('div'); ptr.className = 'bar-track';
-  const pfl  = document.createElement('div'); pfl.className = 'bar-fill bar-progress';
-  pfl.style.width = (i.progress || 0) + '%';
+  const pfl  = document.createElement('div'); pfl.className = 'bar-fill bar-progress'; pfl.style.width = (i.progress||0)+'%';
   ptr.appendChild(pfl);
-  const pct = document.createElement('span'); pct.className = 'progress-pct'; pct.textContent = `${i.progress || 0}%`;
+  const pct = document.createElement('span'); pct.className = 'progress-pct'; pct.textContent = `${i.progress||0}%`;
   prog.append(ptr, pct);
-
-  const go = document.createElement('button'); go.type = 'button'; go.className = 'btn btn-outline btn-sm'; go.textContent = 'Abrir';
+  const go = button('Abrir','btn btn-outline btn-sm');
   go.onclick = () => {
     switchProviderTab('mine');
     state.filters.provider.q = i.id;
-    $('#providerFilterQ').value = i.id;
+    const q = $('#providerFilterQ'); if (q) q.value = i.id;
     renderProviderLists();
   };
   row.append(id, tit, crit, prog, go);
@@ -1056,30 +922,25 @@ function progressRow(i) {
  * USUARIOS
  * ====================================================================== */
 function renderUsers() {
-  const list = $('#usersList');
-  list.innerHTML = '';
-
+  const list = $('#usersList'); list.innerHTML = '';
   if (!providers().length) {
-    list.appendChild(emptyState('No hay proveedores registrados. Crea el primero usando el formulario.'));
-    return;
+    list.appendChild(emptyState('No hay proveedores registrados.')); return;
   }
-
   const tpl = $('#userRowTemplate');
   providers().forEach(u => {
-    const row = tpl.content.firstElementChild.cloneNode(true);
-    $('.user-name', row).textContent = u.name;
-    const typeEl = $('.user-type', row);
+    const row     = tpl.content.firstElementChild.cloneNode(true);
+    $('.user-name',row).textContent  = u.name;
+    const typeEl  = $('.user-type',row);
     typeEl.textContent = TYPE_LABELS[u.type] || '—';
-    typeEl.className = `user-type type-${u.type || 'na'}`;
-    $('.user-username', row).textContent = u.username;
-    $('.user-email', row).textContent    = u.email || '—';
-    $('.user-phone', row).textContent    = u.phone || '—';
-    $('.user-taxid', row).textContent    = u.taxId || '—';
+    typeEl.className   = `user-type type-${u.type||'na'}`;
+    $('.user-username',row).textContent = u.username;
+    $('.user-email',row).textContent    = u.email || '—';
+    $('.user-phone',row).textContent    = u.phone || '—';
+    $('.user-taxid',row).textContent    = u.taxId || '—';
     const assigned = state.incidents.filter(i => i.assignedProviderId === u.id).length;
-    $('.user-assigned', row).textContent = `${assigned} asignada(s)`;
-
-    $('.user-edit-btn', row).onclick   = () => editUser(u.id);
-    $('.user-delete-btn', row).onclick = () => deleteUser(u.id);
+    $('.user-assigned',row).textContent = `${assigned} asignada(s)`;
+    $('.user-edit-btn',row).onclick   = () => editUser(u.id);
+    $('.user-delete-btn',row).onclick = () => deleteUser(u.id);
     list.appendChild(row);
   });
 }
@@ -1093,13 +954,12 @@ function renderAdminFilters() {
   container.dataset.built = '1';
   const q = $('#adminFilterQ'), status = $('#adminFilterStatus'),
         crit = $('#adminFilterCriticality'), assigned = $('#adminFilterAssigned');
-
   fillSelect(status, ['', ...STATUSES], v => v || 'Todos los estados');
   fillSelect(crit,   ['', ...CRITICALITIES], v => v || 'Toda la criticidad');
-  const provOpts = [['', 'Todas las asignaciones'], ['unassigned', 'Sin asignar'],
-                    ...providers().map(p => [p.id, p.name])];
-  fillSelectPairs(assigned, provOpts);
-
+  fillSelectPairs(assigned, [
+    ['','Todas las asignaciones'], ['unassigned','Sin asignar'],
+    ...providers().map(p => [p.id, p.name])
+  ]);
   const onChange = () => {
     state.filters.admin.q           = q.value;
     state.filters.admin.status      = status.value;
@@ -1126,20 +986,17 @@ function renderProviderFilters() {
   crit.addEventListener('change', onChange);
 }
 
-function fillSelect(sel, values, labelFn) {
-  if (!labelFn) labelFn = v => v;
+function fillSelect(sel, values, labelFn = v => v) {
   sel.innerHTML = '';
   values.forEach(v => {
-    const o = document.createElement('option');
-    o.value = v; o.textContent = labelFn(v);
+    const o = document.createElement('option'); o.value = v; o.textContent = labelFn(v);
     sel.appendChild(o);
   });
 }
 function fillSelectPairs(sel, pairs) {
   sel.innerHTML = '';
-  pairs.forEach(([v, t]) => {
-    const o = document.createElement('option');
-    o.value = v; o.textContent = t;
+  pairs.forEach(([v,t]) => {
+    const o = document.createElement('option'); o.value = v; o.textContent = t;
     sel.appendChild(o);
   });
 }
@@ -1149,8 +1006,7 @@ function fillSelectPairs(sel, pairs) {
  * ====================================================================== */
 function renderAdminIncidents() {
   const list = applyAdminFilters(state.incidents);
-  const container = $('#adminIncidentsList');
-  container.innerHTML = '';
+  const container = $('#adminIncidentsList'); container.innerHTML = '';
   if (!list.length) {
     container.appendChild(emptyState('No hay incidencias con esos filtros.'));
     $('#adminCount').textContent = `0 / ${state.incidents.length}`;
@@ -1163,7 +1019,7 @@ function renderAdminIncidents() {
 }
 
 function renderProviderLists() {
-  const myUid = myId();
+  const myUid   = myId();
   const available = applyProviderFilters(state.incidents.filter(i => i.assignedProviderId === null));
   const mine      = applyProviderFilters(state.incidents.filter(i => i.assignedProviderId === myUid));
 
@@ -1181,70 +1037,64 @@ function renderProviderLists() {
 }
 
 function emptyState(text) {
-  const el = document.createElement('div');
-  el.className = 'empty-state';
-  el.textContent = text;
-  return el;
+  const el = document.createElement('div'); el.className = 'empty-state'; el.textContent = text; return el;
 }
 
 /* ========================================================================
  * TARJETA DE INCIDENCIA
  * ====================================================================== */
 function buildIncidentCard(incident, mode) {
-  const tpl = $('#incidentTemplate');
+  const tpl  = $('#incidentTemplate');
   const node = tpl.content.firstElementChild.cloneNode(true);
   node.dataset.id   = incident.id;
   node.dataset.crit = incident.criticality;
 
-  $('.incident-title', node).textContent       = `${incident.id} · ${incident.title}`;
-  $('.incident-address', node).textContent     = incident.address;
-  $('.incident-description', node).textContent = incident.description;
+  $('.incident-title',node).textContent       = `${incident.id} · ${incident.title}`;
+  $('.incident-address',node).textContent     = incident.address;
+  $('.incident-description',node).textContent = incident.description;
 
-  const pb = $('.priority-badge', node);
+  const pb = $('.priority-badge',node);
   pb.textContent = incident.criticality;
   pb.className   = `priority-badge crit-${slug(incident.criticality)}`;
 
-  const sb = $('.status-badge', node);
+  const sb = $('.status-badge',node);
   sb.textContent = incident.status;
   sb.className   = `status-badge status-${slug(incident.status)}`;
 
   const assignedName = incident.assignedProviderId
     ? (findUser(incident.assignedProviderId)?.name || 'Asignado')
     : incident.applications.length > 0
-      ? `${incident.applications.length} postulaci${incident.applications.length === 1 ? 'ón' : 'ones'} pendiente${incident.applications.length === 1 ? '' : 's'}`
+      ? `${incident.applications.length} postulaci${incident.applications.length===1?'ón':'ones'} pendientes`
       : 'Sin asignar';
-  $('.assigned', node).textContent = `Asignación: ${assignedName}`;
+  $('.assigned',node).textContent = `Asignación: ${assignedName}`;
 
-  const meta = $('.incident-meta', node);
+  const meta = $('.incident-meta',node);
   meta.textContent = `Creada ${relativeTime(incident.createdAt)} · ${ageDays(incident.createdAt)} d · Actualizada ${relativeTime(incident.updatedAt)}`;
   meta.title = `Creada: ${formatDate(incident.createdAt)}\nActualizada: ${formatDate(incident.updatedAt)}`;
 
-  const progressWrap = $('.progress-wrap', node);
-  if (progressWrap) {
-    const fill = $('.bar-fill', progressWrap);
-    fill.style.width = (incident.progress || 0) + '%';
-    $('.progress-pct', progressWrap).textContent = `${incident.progress || 0}%`;
+  const pw = $('.progress-wrap',node);
+  if (pw) {
+    $('.bar-fill',pw).style.width = (incident.progress||0)+'%';
+    $('.progress-pct',pw).textContent = `${incident.progress||0}%`;
   }
 
   buildActions(node, incident, mode);
   buildDocsSection(node, incident, mode);
   buildMessages(node, incident);
-
   return node;
 }
 
 /* ---------- Acciones ---------- */
 function buildActions(node, incident, mode) {
-  const actions = $('.incident-actions', node);
+  const actions = $('.incident-actions',node);
   actions.innerHTML = '';
 
   if (mode === 'admin') {
-    // Selector de estado
+    // Estado
     const statusSel = document.createElement('select');
-    statusSel.setAttribute('aria-label', 'Cambiar estado');
+    statusSel.setAttribute('aria-label','Cambiar estado');
     STATUSES.forEach(s => {
-      const o = document.createElement('option');
-      o.value = s; o.textContent = s;
+      const o = document.createElement('option'); o.value = s; o.textContent = s;
       if (incident.status === s) o.selected = true;
       statusSel.appendChild(o);
     });
@@ -1254,534 +1104,361 @@ function buildActions(node, incident, mode) {
       if (statusSel.value === 'Finalizada') incident.progress = 100;
       incident.updatedAt = Date.now();
       saveState();
-      // Notificar al proveedor asignado
-      if (incident.assignedProviderId) {
-        addNotification(
-          incident.assignedProviderId,
-          `${incident.id} cambió de estado: ${prev} → ${incident.status}`,
-          'info', incident.id
-        );
-      }
+      if (incident.assignedProviderId) addNotification(
+        incident.assignedProviderId,
+        `${incident.id} cambió de estado: ${prev} → ${incident.status}`,
+        'info', incident.id
+      );
       renderAdminIncidents();
-      toast('Estado actualizado', 'success');
+      toast('Estado actualizado','success');
     };
 
-    // Selector criticidad
+    // Criticidad
     const critSel = document.createElement('select');
-    critSel.setAttribute('aria-label', 'Cambiar criticidad');
+    critSel.setAttribute('aria-label','Cambiar criticidad');
     CRITICALITIES.forEach(c => {
-      const o = document.createElement('option');
-      o.value = c; o.textContent = c;
+      const o = document.createElement('option'); o.value = c; o.textContent = c;
       if (incident.criticality === c) o.selected = true;
       critSel.appendChild(o);
     });
     critSel.onchange = () => {
-      incident.criticality = critSel.value;
-      incident.updatedAt = Date.now();
-      saveState();
-      renderAdminIncidents();
-      toast('Criticidad actualizada', 'success');
+      incident.criticality = critSel.value; incident.updatedAt = Date.now();
+      saveState(); renderAdminIncidents(); toast('Criticidad actualizada','success');
     };
 
-    const editBtn = button('Editar', 'btn btn-outline btn-sm');
+    const editBtn = button('Editar','btn btn-outline btn-sm');
     editBtn.onclick = () => openEditIncidentDialog(incident);
 
-    const delBtn = button('Eliminar', 'btn btn-danger btn-sm');
+    const delBtn = button('Eliminar','btn btn-danger btn-sm');
     delBtn.onclick = () => {
       if (!confirm(`¿Eliminar la incidencia ${incident.id}?`)) return;
       state.incidents = state.incidents.filter(i => i.id !== incident.id);
-      saveState();
-      renderAdminIncidents();
-      toast('Incidencia eliminada', 'success');
+      saveState(); renderAdminIncidents(); toast('Incidencia eliminada','success');
     };
 
     actions.append(critSel, statusSel, editBtn, delBtn);
 
-    // Sección de postulaciones (con presupuesto)
+    // Postulaciones con presupuesto
     if (incident.applications.length > 0 && !incident.assignedProviderId) {
-      const appsSec = document.createElement('div');
-      appsSec.className = 'applicants-section';
-      const appsH = document.createElement('h5');
-      appsH.textContent = `Postulaciones recibidas (${incident.applications.length})`;
-      appsSec.appendChild(appsH);
-
+      const sec = document.createElement('div'); sec.className = 'applicants-section';
+      const h5  = document.createElement('h5');
+      h5.textContent = `Postulaciones recibidas (${incident.applications.length})`;
+      sec.appendChild(h5);
       incident.applications.forEach(app => {
-        const prov = findUser(app.providerId);
-        if (!prov) return;
-        const row = document.createElement('div');
-        row.className = 'applicant-row';
-
+        const prov = findUser(app.providerId); if (!prov) return;
+        const row  = document.createElement('div'); row.className = 'applicant-row';
         const info = document.createElement('div');
         const name = document.createElement('div'); name.className = 'applicant-name'; name.textContent = prov.name;
         const date = document.createElement('div'); date.className = 'applicant-date'; date.textContent = relativeTime(app.appliedAt);
-        if (app.note) { const note = document.createElement('div'); note.className = 'applicant-date'; note.textContent = `Nota: ${app.note}`; info.appendChild(note); }
         info.append(name, date);
-
-        const amount = document.createElement('div');
-        amount.className = 'applicant-amount';
-        amount.textContent = app.amount != null ? `${Number(app.amount).toFixed(2)} €` : 'Sin importe';
-
-        const approveBtn = button('Aprobar', 'btn btn-success btn-sm');
-        approveBtn.onclick = () => {
+        if (app.note) {
+          const note = document.createElement('div'); note.className = 'applicant-date'; note.textContent = `Nota: ${app.note}`;
+          info.appendChild(note);
+        }
+        const amt = document.createElement('div'); amt.className = 'applicant-amount';
+        amt.textContent = app.amount != null ? `${Number(app.amount).toFixed(2)} €` : 'Sin importe';
+        const apv = button('Aprobar','btn btn-success btn-sm');
+        apv.onclick = () => {
           incident.assignedProviderId = app.providerId;
           if (incident.status === 'Pendiente') incident.status = 'En Proceso';
-          incident.updatedAt = Date.now();
-          saveState();
-          // Notificar al proveedor aprobado
-          addNotification(
-            app.providerId,
-            `Tu postulación para ${incident.id} (${incident.title}) fue aprobada. ¡Estás asignado!`,
-            'success', incident.id
-          );
-          // Notificar a los rechazados
+          incident.updatedAt = Date.now(); saveState();
+          addNotification(app.providerId,
+            `Tu postulación para ${incident.id} fue APROBADA. ¡Estás asignado!`, 'success', incident.id);
           incident.applications
             .filter(a => a.providerId !== app.providerId)
-            .forEach(a => addNotification(
-              a.providerId,
-              `La incidencia ${incident.id} fue asignada a otro proveedor.`,
-              'info', incident.id
-            ));
-          renderAdminIncidents();
-          renderNotifBadge();
-          toast(`Asignado a ${prov.name}`, 'success');
+            .forEach(a => addNotification(a.providerId,
+              `La incidencia ${incident.id} fue asignada a otro proveedor.`, 'info', incident.id));
+          renderAdminIncidents(); renderNotifBadge();
+          toast(`Asignado a ${prov.name}`,'success');
         };
-
-        row.append(info, amount, approveBtn);
-        appsSec.appendChild(row);
+        row.append(info, amt, apv); sec.appendChild(row);
       });
-
-      actions.appendChild(appsSec);
+      actions.appendChild(sec);
     } else if (incident.assignedProviderId) {
-      // Asignación directa (sin postulaciones)
-      const assignSel = document.createElement('select');
-      assignSel.setAttribute('aria-label', 'Reasignar proveedor');
-      const ph = document.createElement('option');
-      ph.value = ''; ph.textContent = '— Reasignar... —';
-      assignSel.appendChild(ph);
-      providers().forEach(p => {
-        const o = document.createElement('option');
-        o.value = p.id; o.textContent = p.name;
-        if (incident.assignedProviderId === p.id) o.selected = true;
-        assignSel.appendChild(o);
-      });
-      const reassignBtn = button('Reasignar', 'btn btn-outline btn-sm');
-      reassignBtn.onclick = () => {
-        if (!assignSel.value) return toast('Selecciona un proveedor', 'error');
-        incident.assignedProviderId = assignSel.value;
-        incident.updatedAt = Date.now();
-        saveState();
-        addNotification(assignSel.value, `Has sido asignado/a a la incidencia ${incident.id}: ${incident.title}`, 'info', incident.id);
-        renderAdminIncidents();
-        toast('Reasignado', 'success');
-      };
-      actions.append(assignSel, reassignBtn);
-    } else {
-      // Sin postulaciones: asignación directa
-      const assignSel = document.createElement('select');
-      assignSel.setAttribute('aria-label', 'Asignar proveedor');
-      const ph = document.createElement('option');
-      ph.value = ''; ph.textContent = '— Asignar directamente —';
-      assignSel.appendChild(ph);
+      // Reasignar
+      const sel = document.createElement('select'); sel.setAttribute('aria-label','Reasignar proveedor');
+      const ph  = document.createElement('option'); ph.value = ''; ph.textContent = '— Reasignar... —';
+      sel.appendChild(ph);
       providers().forEach(p => {
         const o = document.createElement('option'); o.value = p.id; o.textContent = p.name;
-        assignSel.appendChild(o);
+        if (incident.assignedProviderId === p.id) o.selected = true;
+        sel.appendChild(o);
       });
-      const assignBtn = button('Asignar', 'btn btn-primary btn-sm');
-      assignBtn.onclick = () => {
-        if (!assignSel.value) return toast('Selecciona un proveedor', 'error');
-        incident.assignedProviderId = assignSel.value;
-        if (incident.status === 'Pendiente') incident.status = 'En Proceso';
-        incident.updatedAt = Date.now();
-        saveState();
-        addNotification(assignSel.value, `Has sido asignado/a a la incidencia ${incident.id}: ${incident.title}`, 'info', incident.id);
-        renderAdminIncidents();
-        toast('Incidencia asignada', 'success');
+      const btn2 = button('Reasignar','btn btn-outline btn-sm');
+      btn2.onclick = () => {
+        if (!sel.value) return toast('Selecciona un proveedor','error');
+        incident.assignedProviderId = sel.value; incident.updatedAt = Date.now(); saveState();
+        addNotification(sel.value, `Has sido asignado/a a ${incident.id}: ${incident.title}`, 'info', incident.id);
+        renderAdminIncidents(); toast('Reasignado','success');
       };
-      actions.append(assignSel, assignBtn);
+      actions.append(sel, btn2);
+    } else {
+      // Asignación directa
+      const sel = document.createElement('select'); sel.setAttribute('aria-label','Asignar proveedor');
+      const ph  = document.createElement('option'); ph.value = ''; ph.textContent = '— Asignar directamente —';
+      sel.appendChild(ph);
+      providers().forEach(p => {
+        const o = document.createElement('option'); o.value = p.id; o.textContent = p.name;
+        sel.appendChild(o);
+      });
+      const btn2 = button('Asignar','btn btn-primary btn-sm');
+      btn2.onclick = () => {
+        if (!sel.value) return toast('Selecciona un proveedor','error');
+        incident.assignedProviderId = sel.value;
+        if (incident.status === 'Pendiente') incident.status = 'En Proceso';
+        incident.updatedAt = Date.now(); saveState();
+        addNotification(sel.value, `Has sido asignado/a a ${incident.id}: ${incident.title}`, 'info', incident.id);
+        renderAdminIncidents(); toast('Incidencia asignada','success');
+      };
+      actions.append(sel, btn2);
     }
   }
 
   if (mode === 'provider-available') {
     const myApp = incident.applications.find(a => a.providerId === myId());
-    const applied = !!myApp;
-
-    if (applied) {
+    if (myApp) {
       const badge = document.createElement('div');
       badge.className = 'status-badge status-en-proceso';
-      badge.textContent = `Postulación enviada · ${myApp.amount != null ? myApp.amount.toFixed(2) + ' €' : 'Sin importe'}`;
+      badge.textContent = `Postulación enviada · ${myApp.amount!=null?myApp.amount.toFixed(2)+' €':'Sin importe'}`;
       actions.appendChild(badge);
     } else {
-      // Formulario para postularse con presupuesto
-      const form = document.createElement('div');
-      form.className = 'apply-form';
-
-      const lbl = document.createElement('label'); lbl.textContent = 'Tu presupuesto:';
-      const amountInput = document.createElement('input');
-      amountInput.type = 'number'; amountInput.step = '0.01'; amountInput.min = '0';
-      amountInput.placeholder = 'Importe (€)';
-
-      const noteInput = document.createElement('input');
-      noteInput.type = 'text'; noteInput.placeholder = 'Nota opcional'; noteInput.maxLength = 200;
-      noteInput.style.cssText = 'flex:2;min-width:120px;max-width:220px;padding:7px 10px;font-size:13px';
-
-      const applyBtn = button('Postularme', 'btn btn-primary btn-sm');
+      const form = document.createElement('div'); form.className = 'apply-form';
+      const lbl  = document.createElement('label'); lbl.textContent = 'Tu presupuesto:';
+      const amtIn = document.createElement('input');
+      amtIn.type = 'number'; amtIn.step = '0.01'; amtIn.min = '0'; amtIn.placeholder = 'Importe (€)';
+      const noteIn = document.createElement('input');
+      noteIn.type = 'text'; noteIn.placeholder = 'Nota opcional'; noteIn.maxLength = 200;
+      noteIn.style.cssText = 'flex:2;min-width:120px;max-width:200px;padding:7px 10px;font-size:13px';
+      const applyBtn = button('Postularme','btn btn-primary btn-sm');
       applyBtn.onclick = () => {
-        const amount = amountInput.value ? parseFloat(amountInput.value) : null;
-        if (amount === null || isNaN(amount) || amount < 0) {
-          return toast('Introduce un presupuesto válido', 'error');
-        }
+        const amount = amtIn.value ? parseFloat(amtIn.value) : null;
+        if (amount === null || isNaN(amount) || amount < 0)
+          return toast('Introduce un presupuesto válido','error');
         incident.applicants.push(myId());
-        incident.applications.push({
-          providerId: myId(),
-          amount,
-          note: noteInput.value.trim(),
-          appliedAt: Date.now()
-        });
+        incident.applications.push({ providerId: myId(), amount, note: noteIn.value.trim(), appliedAt: Date.now() });
         incident.messages.push({
           from: myId(),
-          text: `Me postulo para esta incidencia. Presupuesto: ${amount.toFixed(2)} €${noteInput.value.trim() ? ' — ' + noteInput.value.trim() : ''}`,
+          text: `Me postulo. Presupuesto: ${amount.toFixed(2)} €${noteIn.value.trim()?' — '+noteIn.value.trim():''}`,
           at: Date.now()
         });
-        incident.updatedAt = Date.now();
-        saveState();
-        // Notificar al admin
-        const adminUser = state.users.find(u => u.role === 'admin');
-        if (adminUser) {
-          addNotification(
-            adminUser.id,
-            `${userName(myId())} se postuló para ${incident.id} (${incident.title}) — Presupuesto: ${amount.toFixed(2)} €`,
-            'info', incident.id
-          );
-        }
-        renderProviderLists();
-        toast('Postulación enviada con éxito', 'success');
+        incident.updatedAt = Date.now(); saveState();
+        const admin = state.users.find(u => u.role === 'admin');
+        if (admin) addNotification(admin.id,
+          `${userName(myId())} se postuló para ${incident.id} — Presupuesto: ${amount.toFixed(2)} €`,
+          'info', incident.id);
+        renderProviderLists(); toast('Postulación enviada','success');
       };
-
-      form.append(lbl, amountInput, noteInput, applyBtn);
+      form.append(lbl, amtIn, noteIn, applyBtn);
       actions.appendChild(form);
     }
   }
 
   if (mode === 'provider-mine') {
-    const progBox = document.createElement('div');
-    progBox.className = 'progress-control';
-    const label = document.createElement('label'); label.textContent = 'Avance:';
-    const slider = document.createElement('input');
+    const progBox = document.createElement('div'); progBox.className = 'progress-control';
+    const lbl     = document.createElement('label'); lbl.textContent = 'Avance:';
+    const slider  = document.createElement('input');
     slider.type = 'range'; slider.min = '0'; slider.max = '100'; slider.step = '5';
-    slider.value = String(incident.progress || 0);
-    slider.setAttribute('aria-label', 'Porcentaje de avance');
-    const out = document.createElement('output');
-    out.textContent = `${slider.value}%`;
-    slider.addEventListener('input', () => out.textContent = `${slider.value}%`);
+    slider.value = String(incident.progress||0);
+    slider.setAttribute('aria-label','Porcentaje de avance');
+    const out = document.createElement('output'); out.textContent = `${slider.value}%`;
+    slider.addEventListener('input',  () => out.textContent = `${slider.value}%`);
     slider.addEventListener('change', () => {
       incident.progress = parseInt(slider.value, 10);
-      if (incident.progress === 100 && incident.status !== 'Finalizada') {
-        incident.status = 'Finalizada';
-      } else if (incident.progress > 0 && incident.status === 'Pendiente') {
-        incident.status = 'En Proceso';
-      }
-      incident.updatedAt = Date.now();
-      saveState();
-      renderProviderLists();
-      toast(`Avance: ${incident.progress}%`, 'success');
+      if (incident.progress === 100 && incident.status !== 'Finalizada') incident.status = 'Finalizada';
+      else if (incident.progress > 0 && incident.status === 'Pendiente') incident.status = 'En Proceso';
+      incident.updatedAt = Date.now(); saveState(); renderProviderLists();
+      toast(`Avance: ${incident.progress}%`,'success');
     });
-    progBox.append(label, slider, out);
+    progBox.append(lbl, slider, out);
 
-    const finishBtn = button('Finalizar', 'btn btn-success btn-sm');
-    finishBtn.disabled = incident.status === 'Finalizada';
-    finishBtn.onclick = () => {
-      incident.status = 'Finalizada';
-      incident.progress = 100;
-      incident.updatedAt = Date.now();
-      saveState();
-      // Notificar al admin
-      const adminUser = state.users.find(u => u.role === 'admin');
-      if (adminUser) {
-        addNotification(adminUser.id, `${incident.id} marcada como Finalizada por ${userName(myId())}`, 'success', incident.id);
-      }
-      renderProviderLists();
-      toast('Marcada como finalizada', 'success');
+    const finBtn = button('Finalizar','btn btn-success btn-sm');
+    finBtn.disabled = incident.status === 'Finalizada';
+    finBtn.onclick = () => {
+      incident.status = 'Finalizada'; incident.progress = 100; incident.updatedAt = Date.now(); saveState();
+      const admin = state.users.find(u => u.role === 'admin');
+      if (admin) addNotification(admin.id, `${incident.id} marcada Finalizada por ${userName(myId())}`, 'success', incident.id);
+      renderProviderLists(); toast('Marcada como finalizada','success');
     };
 
-    const reviewBtn = button('Requiere revisión', 'btn btn-outline btn-sm');
-    reviewBtn.onclick = () => {
-      incident.status = 'Requiere Revisión';
-      incident.updatedAt = Date.now();
-      saveState();
-      const adminUser = state.users.find(u => u.role === 'admin');
-      if (adminUser) {
-        addNotification(adminUser.id, `${incident.id} requiere revisión (${incident.title})`, 'info', incident.id);
-      }
-      renderProviderLists();
-      toast('Marcada para revisión', 'info');
+    const revBtn = button('Requiere revisión','btn btn-outline btn-sm');
+    revBtn.onclick = () => {
+      incident.status = 'Requiere Revisión'; incident.updatedAt = Date.now(); saveState();
+      const admin = state.users.find(u => u.role === 'admin');
+      if (admin) addNotification(admin.id, `${incident.id} requiere revisión (${incident.title})`, 'info', incident.id);
+      renderProviderLists(); toast('Marcada para revisión','info');
     };
 
-    actions.append(progBox, finishBtn, reviewBtn);
+    actions.append(progBox, finBtn, revBtn);
   }
 }
 
 function openEditIncidentDialog(incident) {
-  const title = prompt('Título:', incident.title);
-  if (title === null) return;
-  const address = prompt('Dirección:', incident.address);
-  if (address === null) return;
-  const description = prompt('Descripción:', incident.description);
-  if (description === null) return;
-  if (!title.trim() || !address.trim() || !description.trim()) return toast('Campos obligatorios', 'error');
-  incident.title = title.trim();
-  incident.address = address.trim();
-  incident.description = description.trim();
-  incident.updatedAt = Date.now();
-  saveState();
-  renderAdminIncidents();
-  toast('Incidencia actualizada', 'success');
+  const title = prompt('Título:', incident.title); if (title === null) return;
+  const address = prompt('Dirección:', incident.address); if (address === null) return;
+  const description = prompt('Descripción:', incident.description); if (description === null) return;
+  if (!title.trim()||!address.trim()||!description.trim()) return toast('Campos obligatorios','error');
+  incident.title = title.trim(); incident.address = address.trim(); incident.description = description.trim();
+  incident.updatedAt = Date.now(); saveState(); renderAdminIncidents();
+  toast('Incidencia actualizada','success');
 }
 
 /* ========================================================================
  * DOCUMENTOS
  * ====================================================================== */
 function buildDocsSection(node, incident, mode) {
-  const section = $('.docs-section', node);
-  if (!section) return;
+  const section = $('.docs-section',node); if (!section) return;
   section.innerHTML = '';
-
   const canUpload = mode === 'provider-mine' && incident.assignedProviderId === myId();
   const canReview = mode === 'admin';
-
   if (!canUpload && !canReview && !incident.budgets.length && !incident.invoices.length) {
-    section.classList.add('hidden');
-    return;
+    section.classList.add('hidden'); return;
   }
   section.classList.remove('hidden');
-
-  const h = document.createElement('h4'); h.textContent = 'Documentos';
-  section.appendChild(h);
-
+  const h = document.createElement('h4'); h.textContent = 'Documentos'; section.appendChild(h);
   renderDocList(section, incident, 'budgets',  'Presupuestos', canUpload, canReview);
   renderDocList(section, incident, 'invoices', 'Facturas',     canUpload, canReview);
 }
 
 function renderDocList(parent, incident, key, title, canUpload, canReview) {
-  const wrap = document.createElement('div');
-  wrap.className = 'docs-group';
-
-  const h = document.createElement('h5'); h.textContent = title;
-  wrap.appendChild(h);
+  const wrap = document.createElement('div'); wrap.className = 'docs-group';
+  const h = document.createElement('h5'); h.textContent = title; wrap.appendChild(h);
 
   if (!incident[key].length) {
-    const empty = document.createElement('div');
-    empty.className = 'message-empty';
-    empty.textContent = 'Sin documentos.';
-    wrap.appendChild(empty);
+    const em = document.createElement('div'); em.className = 'message-empty'; em.textContent = 'Sin documentos.';
+    wrap.appendChild(em);
   } else {
     incident[key].forEach(doc => wrap.appendChild(docRow(incident, key, doc, canReview)));
   }
 
   if (canUpload) {
-    const form = document.createElement('div');
-    form.className = 'doc-upload';
-
-    const fileLabel = document.createElement('label');
-    fileLabel.className = 'btn btn-outline btn-sm';
-    fileLabel.textContent = `+ Subir ${title.toLowerCase().slice(0, -1)} `;
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.accept = '.pdf,.jpg,.jpeg,.png,.webp';
-    fileInput.style.display = 'none';
-    fileLabel.appendChild(fileInput);
-
+    const form    = document.createElement('div'); form.className = 'doc-upload';
+    const fileLbl = document.createElement('label'); fileLbl.className = 'btn btn-outline btn-sm';
+    fileLbl.textContent = `+ Subir ${title.toLowerCase().slice(0,-1)} `;
+    const fileIn = document.createElement('input');
+    fileIn.type = 'file'; fileIn.accept = '.pdf,.jpg,.jpeg,.png,.webp'; fileIn.style.display = 'none';
+    fileLbl.appendChild(fileIn);
     const amount = document.createElement('input');
     amount.type = 'number'; amount.step = '0.01'; amount.min = '0';
-    amount.placeholder = 'Importe (€)';
-    amount.className = 'doc-amount';
+    amount.placeholder = 'Importe (€)'; amount.className = 'doc-amount';
 
-    fileInput.onchange = async () => {
-      const file = fileInput.files?.[0];
-      if (!file) return;
+    fileIn.onchange = async () => {
+      const file = fileIn.files?.[0]; if (!file) return;
       if (file.size > MAX_FILE_BYTES) {
-        toast(`Archivo demasiado grande (máx. ${fmtBytes(MAX_FILE_BYTES)})`, 'error');
-        fileInput.value = '';
-        return;
+        toast(`Archivo demasiado grande (máx. ${fmtBytes(MAX_FILE_BYTES)})`,'error');
+        fileIn.value = ''; return;
       }
       try {
         const dataUrl = await readFileAsDataURL(file);
         incident[key].push({
-          id: uid('doc'),
-          providerId: myId(),
-          filename: file.name,
-          size: file.size,
-          mime: file.type,
-          dataUrl,
+          id: uid('doc'), providerId: myId(), filename: file.name,
+          size: file.size, mime: file.type, dataUrl,
           amount: amount.value ? parseFloat(amount.value) : null,
-          status: 'en_revision',
-          uploadedAt: Date.now(),
-          reviewedAt: null,
-          reviewNote: ''
+          status: 'en_revision', uploadedAt: Date.now(), reviewedAt: null, reviewNote: ''
         });
-        incident.updatedAt = Date.now();
-        saveState();
-        amount.value = '';
-        fileInput.value = '';
-        // Notificar admin
-        const adminUser = state.users.find(u => u.role === 'admin');
-        if (adminUser) {
-          addNotification(adminUser.id, `Nuevo documento en ${incident.id}: ${file.name}`, 'info', incident.id);
-        }
-        renderProviderLists();
-        toast(`${title.slice(0, -1)} subida`, 'success');
-      } catch (err) {
-        console.error(err);
-        toast('Error leyendo el archivo', 'error');
-      }
+        incident.updatedAt = Date.now(); saveState();
+        amount.value = ''; fileIn.value = '';
+        const admin = state.users.find(u => u.role === 'admin');
+        if (admin) addNotification(admin.id, `Nuevo documento en ${incident.id}: ${file.name}`, 'info', incident.id);
+        renderProviderLists(); toast(`${title.slice(0,-1)} subida`,'success');
+      } catch (err) { console.error(err); toast('Error leyendo el archivo','error'); }
     };
 
-    form.append(fileLabel, amount);
-    wrap.appendChild(form);
+    form.append(fileLbl, amount); wrap.appendChild(form);
   }
-
   parent.appendChild(wrap);
 }
 
 function docRow(incident, key, doc, canReview) {
-  const row = document.createElement('div');
-  row.className = `doc-row doc-${doc.status}`;
-
+  const row  = document.createElement('div'); row.className = `doc-row doc-${doc.status}`;
   const info = document.createElement('div'); info.className = 'doc-info';
   const link = document.createElement('a');
-  link.href = doc.dataUrl;
-  link.download = doc.filename;
-  link.textContent = doc.filename;
-  link.target = '_blank';
-  link.rel = 'noopener';
-  const meta = document.createElement('span');
-  meta.className = 'doc-meta';
-  const provName = userName(doc.providerId);
-  meta.textContent = `${provName} · ${fmtBytes(doc.size || 0)} · ${relativeTime(doc.uploadedAt)}${doc.amount != null ? ` · ${doc.amount.toFixed(2)} €` : ''}`;
+  link.href = doc.dataUrl; link.download = doc.filename; link.textContent = doc.filename;
+  link.target = '_blank'; link.rel = 'noopener';
+  const meta = document.createElement('span'); meta.className = 'doc-meta';
+  meta.textContent = `${userName(doc.providerId)} · ${fmtBytes(doc.size||0)} · ${relativeTime(doc.uploadedAt)}${doc.amount!=null?` · ${doc.amount.toFixed(2)} €`:''}`;
   info.append(link, meta);
-
   const status = document.createElement('span');
   status.className = `doc-status doc-status-${doc.status}`;
   status.textContent = DOC_STATUSES[doc.status];
-
   row.append(info, status);
 
   if (canReview) {
     const acts = document.createElement('div'); acts.className = 'doc-actions';
-    const approve = button('Aprobar', 'btn btn-sm btn-success');
+    const approve = button('Aprobar','btn btn-sm btn-success');
     approve.disabled = doc.status === 'aprobado';
-    approve.onclick = () => updateDocStatus(incident, doc, 'aprobado');
-    const reject = button('Rechazar', 'btn btn-sm btn-danger');
+    approve.onclick  = () => updateDocStatus(incident, doc, 'aprobado');
+    const reject = button('Rechazar','btn btn-sm btn-danger');
     reject.disabled = doc.status === 'rechazado';
-    reject.onclick = () => updateDocStatus(incident, doc, 'rechazado');
-    const reset = button('Revisar', 'btn btn-sm btn-outline');
+    reject.onclick  = () => updateDocStatus(incident, doc, 'rechazado');
+    const reset = button('Revisar','btn btn-sm btn-outline');
     reset.disabled = doc.status === 'en_revision';
-    reset.onclick = () => updateDocStatus(incident, doc, 'en_revision');
-    const del = button('×', 'btn btn-sm btn-ghost');
-    del.title = 'Eliminar documento';
+    reset.onclick  = () => updateDocStatus(incident, doc, 'en_revision');
+    const del = button('×','btn btn-sm btn-ghost'); del.title = 'Eliminar documento';
     del.onclick = () => {
       if (!confirm('¿Eliminar este documento?')) return;
       incident[key] = incident[key].filter(d => d.id !== doc.id);
-      incident.updatedAt = Date.now();
-      saveState();
-      renderAdminIncidents();
+      incident.updatedAt = Date.now(); saveState(); renderAdminIncidents();
     };
-    acts.append(approve, reject, reset, del);
-    row.appendChild(acts);
+    acts.append(approve, reject, reset, del); row.appendChild(acts);
   }
-
   return row;
 }
 
 function updateDocStatus(incident, doc, newStatus) {
-  doc.status = newStatus;
-  doc.reviewedAt = Date.now();
-  incident.updatedAt = Date.now();
-  saveState();
-  // Notificar al proveedor
-  if (doc.providerId) {
-    addNotification(
-      doc.providerId,
-      `Tu documento "${doc.filename}" en ${incident.id} fue ${DOC_STATUSES[newStatus].toLowerCase()}`,
-      newStatus === 'aprobado' ? 'success' : 'info',
-      incident.id
-    );
-  }
-  if (isAdmin()) renderAdminIncidents();
-  else renderProviderLists();
-  toast(`Documento ${DOC_STATUSES[newStatus].toLowerCase()}`, 'success');
+  doc.status = newStatus; doc.reviewedAt = Date.now(); incident.updatedAt = Date.now(); saveState();
+  if (doc.providerId) addNotification(doc.providerId,
+    `Tu documento "${doc.filename}" en ${incident.id} fue ${DOC_STATUSES[newStatus].toLowerCase()}`,
+    newStatus === 'aprobado' ? 'success' : 'info', incident.id);
+  if (isAdmin()) renderAdminIncidents(); else renderProviderLists();
+  toast(`Documento ${DOC_STATUSES[newStatus].toLowerCase()}`,'success');
 }
 
 /* ========================================================================
  * MENSAJES
  * ====================================================================== */
 function buildMessages(node, incident) {
-  const messagesEl = $('.messages', node);
-  messagesEl.innerHTML = '';
-
+  const messagesEl = $('.messages',node); messagesEl.innerHTML = '';
   if (!incident.messages.length) {
-    const empty = document.createElement('div');
-    empty.className = 'message-empty';
-    empty.textContent = 'Sin mensajes todavía.';
-    messagesEl.appendChild(empty);
+    const em = document.createElement('div'); em.className = 'message-empty'; em.textContent = 'Sin mensajes todavía.';
+    messagesEl.appendChild(em);
   } else {
     incident.messages.forEach(m => {
       const item = document.createElement('div');
       item.className = `message-item ${m.from === myId() ? 'mine' : ''}`;
-      const who = document.createElement('b'); who.textContent = userName(m.from);
-      const txt = document.createElement('span'); txt.textContent = ` ${m.text}`;
-      const time = document.createElement('time');
-      time.className = 'message-time';
-      time.textContent = relativeTime(m.at);
-      time.title = formatDate(m.at);
-      item.append(who, txt, time);
-      messagesEl.appendChild(item);
+      const who  = document.createElement('b');    who.textContent  = userName(m.from);
+      const txt  = document.createElement('span'); txt.textContent  = ` ${m.text}`;
+      const time = document.createElement('time'); time.className   = 'message-time';
+      time.textContent = relativeTime(m.at); time.title = formatDate(m.at);
+      item.append(who, txt, time); messagesEl.appendChild(item);
     });
-    // Scroll al final
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
-  const input = $('.message-input', node);
-  const send  = $('.send-message-btn', node);
+  const input = $('.message-input',node);
+  const send  = $('.send-message-btn',node);
   const sendHandler = () => {
-    const text = input.value.trim();
-    if (!text) return;
-    if (text.length > 500) return toast('Mensaje demasiado largo', 'error');
+    const text = input.value.trim(); if (!text) return;
+    if (text.length > 500) return toast('Mensaje demasiado largo','error');
     incident.messages.push({ from: myId(), text, at: Date.now() });
-    incident.updatedAt = Date.now();
-    saveState();
-
+    incident.updatedAt = Date.now(); saveState();
     // Notificar a la otra parte
     let recipientId = null;
-    if (isAdmin() && incident.assignedProviderId) {
-      recipientId = incident.assignedProviderId;
-    } else if (!isAdmin()) {
-      const adminUser = state.users.find(u => u.role === 'admin');
-      if (adminUser) recipientId = adminUser.id;
+    if (isAdmin() && incident.assignedProviderId) recipientId = incident.assignedProviderId;
+    else if (!isAdmin()) {
+      const admin = state.users.find(u => u.role === 'admin');
+      if (admin) recipientId = admin.id;
     }
-    if (recipientId) {
-      addNotification(
-        recipientId,
-        `Nuevo mensaje en ${incident.id}: "${text.length > 60 ? text.slice(0, 60) + '…' : text}"`,
-        'info', incident.id
-      );
-    }
-
+    if (recipientId) addNotification(recipientId,
+      `Nuevo mensaje en ${incident.id}: "${text.length>60?text.slice(0,60)+'…':text}"`, 'info', incident.id);
     input.value = '';
-    if (isAdmin()) renderAdminIncidents();
-    else renderProviderLists();
+    if (isAdmin()) renderAdminIncidents(); else renderProviderLists();
   };
   send.onclick = sendHandler;
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendHandler(); }
-  });
+  input.addEventListener('keydown', e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendHandler(); } });
 }
 
 function button(label, className = 'btn btn-outline') {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = className;
-  b.textContent = label;
-  return b;
+  const b = document.createElement('button'); b.type = 'button'; b.className = className; b.textContent = label; return b;
 }
 
 /* ========================================================================
@@ -1792,69 +1469,57 @@ function bindEvents() {
   $('#logoutBtn').addEventListener('click', logout);
   $('#createIncidentBtn').addEventListener('click', createIncident);
 
-  ['usernameInput', 'passwordInput'].forEach(id => {
-    $('#' + id).addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
-  });
+  ['usernameInput','passwordInput'].forEach(id =>
+    $('#'+id).addEventListener('keydown', e => { if (e.key==='Enter') login(); })
+  );
 
-  $$('[data-admin-tab]').forEach(btn => {
-    btn.addEventListener('click', () => switchAdminTab(btn.dataset.adminTab));
-  });
-  $$('[data-provider-tab]').forEach(btn => {
-    btn.addEventListener('click', () => switchProviderTab(btn.dataset.providerTab));
-  });
+  $$('[data-admin-tab]').forEach(btn =>
+    btn.addEventListener('click', () => switchAdminTab(btn.dataset.adminTab))
+  );
+  $$('[data-provider-tab]').forEach(btn =>
+    btn.addEventListener('click', () => switchProviderTab(btn.dataset.providerTab))
+  );
 
   const userForm = $('#userForm');
   if (userForm) userForm.addEventListener('submit', submitUserForm);
   const cancelEdit = $('#cancelEditUserBtn');
-  if (cancelEdit) cancelEdit.addEventListener('click', () => { resetUserForm(); toast('Edición cancelada', 'info'); });
+  if (cancelEdit) cancelEdit.addEventListener('click', () => { resetUserForm(); toast('Edición cancelada','info'); });
 
-  // Notificaciones: toggle panel
+  // Campana notificaciones
   const notifBtn = $('#notifBtn');
   if (notifBtn) {
     notifBtn.addEventListener('click', e => {
       e.stopPropagation();
       const panel = $('#notifPanel');
       const isOpen = !panel.classList.contains('hidden');
-      if (isOpen) {
-        panel.classList.add('hidden');
-      } else {
-        renderNotifPanel();
-        panel.classList.remove('hidden');
-        // Marcar como leídas al abrir
+      if (isOpen) { panel.classList.add('hidden'); }
+      else {
+        renderNotifPanel(); panel.classList.remove('hidden');
         setTimeout(() => {
-          myNotifications().filter(n => !n.read).forEach(n => { n.read = true; });
-          saveState();
-          renderNotifBadge();
+          myNotifications().filter(n=>!n.read).forEach(n=>{n.read=true;});
+          saveState(); renderNotifBadge();
         }, 1500);
       }
     });
   }
-  // Cerrar panel al hacer click fuera
-  document.addEventListener('click', () => {
-    $('#notifPanel')?.classList.add('hidden');
-  });
+  document.addEventListener('click', () => $('#notifPanel')?.classList.add('hidden'));
 
+  // Reset
   const resetBtn = $('#resetBtn');
   if (resetBtn) {
     resetBtn.addEventListener('click', () => {
       if (!confirm('¿Restablecer todos los datos a la demo?')) return;
       localStorage.removeItem(STORAGE_KEY);
       sessionStorage.removeItem(SESSION_KEY);
-      state.currentUser = null;
+      state.currentUser   = null;
       state.users         = structuredClone(DEFAULT_USERS);
       state.incidents     = structuredClone(DEFAULT_INCIDENTS);
       state.notifications = [];
-      saveState();
-      render();
-      toast('Datos restablecidos', 'success');
+      saveState(); render(); toast('Datos restablecidos','success');
     });
   }
 }
 
-function init() {
-  loadState();
-  bindEvents();
-  render();
-}
+function init() { loadState(); bindEvents(); render(); }
 
 document.addEventListener('DOMContentLoaded', init);
