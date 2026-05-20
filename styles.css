@@ -535,17 +535,13 @@ textarea { resize: vertical; }
   line-height: 1.4;
 }
 .login-flag {
-  width: 22px !important;
-  height: 15px !important;
-  max-width: 22px;
-  max-height: 15px;
+  width: 22px;
+  height: 15px;
   border-radius: 2px;
   box-shadow: 0 0 0 1px rgba(0,0,0,.12);
   flex-shrink: 0;
-  flex-grow: 0;
   display: inline-block;
   vertical-align: middle;
-  overflow: hidden;
 }
 .login-made-sep { color: var(--border); }
 
