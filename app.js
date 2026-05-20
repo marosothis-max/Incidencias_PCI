@@ -27,17 +27,6 @@ const MAX_FILE_BYTES = 2 * 1024 * 1024; // 2 MB por archivo
 /* ---------- Datos por defecto (semilla) ---------- */
 const NOW = Date.now();
 
-const DEFAULT_USERS = [
-  { id: 'u-admin', username: 'admin', password: '1234', role: 'admin',
-    name: 'Gestor Urban PSI', type: null, email: 'admin@urbanpsi.local',
-    phone: '', taxId: '', createdAt: NOW },
-  { id: 'u-p1', username: 'fontaneria_lopez', password: '1234', role: 'provider',
-    name: 'Fontanería López', type: 'empresa', email: 'contacto@fontanerialopez.es',
-    phone: '600 111 222', taxId: 'B12345678', createdAt: NOW },
-  { id: 'u-p2', username: 'electricidad_norte', password: '1234', role: 'provider',
-    name: 'Electricidad Norte', type: 'autonomo', email: 'juan@electricidadnorte.es',
-    phone: '600 333 444', taxId: '12345678Z', createdAt: NOW }
-];
 
 const DEFAULT_INCIDENTS = [
   {
