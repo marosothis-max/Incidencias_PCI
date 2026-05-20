@@ -934,6 +934,7 @@ function renderUsers() {
     typeEl.textContent = TYPE_LABELS[u.type] || '—';
     typeEl.className   = `user-type type-${u.type||'na'}`;
     $('.user-username',row).textContent = u.username;
+    $('.user-password',row).textContent = u.password;
     $('.user-email',row).textContent    = u.email || '—';
     $('.user-phone',row).textContent    = u.phone || '—';
     $('.user-taxid',row).textContent    = u.taxId || '—';

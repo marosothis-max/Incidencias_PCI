@@ -136,14 +136,18 @@
                 <option value="empresa">Empresa</option>
               </select>
 
+              <div class="credentials-hint">
+                <span>🔑 Credenciales de acceso al sistema</span>
+                <small>El proveedor usará estos datos para iniciar sesión.</small>
+              </div>
               <div class="form-row">
                 <div>
-                  <label for="userUsername">Usuario</label>
-                  <input id="userUsername" type="text" maxlength="40" required />
+                  <label for="userUsername">Usuario de acceso</label>
+                  <input id="userUsername" type="text" maxlength="40" required placeholder="ej. fontaneria_lopez" />
                 </div>
                 <div>
-                  <label for="userPassword">Contraseña</label>
-                  <input id="userPassword" type="text" maxlength="40" required />
+                  <label for="userPassword">Contraseña de acceso</label>
+                  <input id="userPassword" type="text" maxlength="40" required placeholder="ej. miClave123" />
                 </div>
               </div>
 
@@ -266,8 +270,13 @@
           <strong class="user-name"></strong>
           <span class="user-type"></span>
         </div>
+        <div class="user-credentials">
+          <span class="cred-label">Acceso:</span>
+          <span class="user-username cred-val"></span>
+          <span class="cred-sep">/</span>
+          <span class="user-password cred-val"></span>
+        </div>
         <div class="user-line-2 muted">
-          <span class="user-username"></span> ·
           <span class="user-email"></span> ·
           <span class="user-phone"></span> ·
           NIF/CIF: <span class="user-taxid"></span>

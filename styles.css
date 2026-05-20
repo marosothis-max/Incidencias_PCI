@@ -472,6 +472,27 @@ textarea { resize: vertical; }
   font-weight: 800;
 }
 
+.credentials-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 16px;
+  padding: 10px 14px;
+  background: rgba(90,128,98,.1);
+  border: 1px solid rgba(90,128,98,.3);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-sm);
+}
+.credentials-hint span {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.credentials-hint small {
+  font-size: 12px;
+  color: var(--muted);
+}
+
 /* ========================================================================
  * DASHBOARD
  * ====================================================================== */
@@ -934,6 +955,35 @@ textarea { resize: vertical; }
 .user-line-1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .user-line-1 strong { color: var(--primary); font-size: 14px; }
 .user-line-2, .user-line-3 { font-size: 12px; margin-top: 4px; word-break: break-word; }
+
+.user-credentials {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+  padding: 4px 10px;
+  background: rgba(90,128,98,.08);
+  border: 1px solid rgba(90,128,98,.25);
+  border-radius: var(--radius-sm);
+  width: fit-content;
+}
+.cred-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.cred-val {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  color: var(--text);
+}
+.cred-sep {
+  font-size: 12px;
+  color: var(--muted);
+}
 .user-type {
   font-size: 10px;
   padding: 2px 9px;
